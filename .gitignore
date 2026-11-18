@@ -34,3 +34,6 @@ __pycache__/
 Thumbs.db
 desktop.ini
 .DS_Store
+
+# ---- store listing graphics and text (kept locally, not published in the repo)
+store/

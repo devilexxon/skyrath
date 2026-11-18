@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.skyrath.game"
-    android:versionCode="17"
-    android:versionName="1.8.2">
+    android:versionCode="18"
+    android:versionName="1.8.3">
 
-    <uses-sdk android:minSdkVersion="24" android:targetSdkVersion="34" />
+    <uses-sdk android:minSdkVersion="24" android:targetSdkVersion="36" />
     <!-- The game is fully offline; this permission only lets the built-in web view start. -->
     <uses-permission android:name="android.permission.INTERNET" />
 
@@ -12,6 +12,7 @@
         android:label="Skyrath"
         android:icon="@mipmap/ic_launcher"
         android:hardwareAccelerated="true"
+        android:enableOnBackInvokedCallback="true"
         android:theme="@android:style/Theme.NoTitleBar.Fullscreen">
         <activity
             android:name=".MainActivity"

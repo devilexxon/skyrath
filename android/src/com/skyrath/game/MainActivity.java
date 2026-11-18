@@ -1,7 +1,9 @@
 package com.skyrath.game;
 
 import android.app.Activity;
+import android.os.Build;
 import android.os.Bundle;
+import android.window.OnBackInvokedDispatcher;
 import android.view.View;
 import android.view.WindowManager;
 import android.webkit.WebResourceRequest;
@@ -54,6 +56,7 @@ public class MainActivity extends Activity {
         });
         web.loadUrl(HOST + "index.html");
         hideBars();
+        registerBack();
     }
 
     private static String mimeOf(String p) {
@@ -85,13 +88,27 @@ public class MainActivity extends Activity {
     }
 
     /** Back pauses or resumes a run; anywhere else it sends the app to the background (keeps progress). */
-    @Override
-    public void onBackPressed() {
+    private void handleBack() {
         web.evaluateJavascript("window.skyrathBack ? window.skyrathBack() : false", value -> {
             if (!"true".equals(value)) {
                 moveTaskToBack(true);
             }
         });
+    }
+
+    // Android 13+ (and always from target level 36): the system only reports Back through this callback
+    private void registerBack() {
+        if (Build.VERSION.SDK_INT >= 33) {
+            getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
+                    OnBackInvokedDispatcher.PRIORITY_DEFAULT, this::handleBack);
+        }
+    }
+
+    // Android 12 and older
+    @Override
+    @SuppressWarnings("deprecation")
+    public void onBackPressed() {
+        handleBack();
     }
 
     @Override

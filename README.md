@@ -75,11 +75,14 @@ Then open http://localhost:5173/. On Windows you can also double-click `Play Sky
 ```bash
 node tools/build_web.mjs web          # itch.io / any web host  -> dist/web
 node tools/build_web.mjs crazygames   # CrazyGames (adds their SDK) -> dist/web-crazygames
-node tools/build_web.mjs android      # then: bash tools/build_apk.sh      (needs JDK 17 + Android SDK build-tools 34)
+node tools/build_web.mjs android      # then: bash tools/build_apk.sh  (sideload APK)  or  bash tools/build_aab.sh  (Google Play bundle)
+                                      #   needs JDK 17, Android SDK platform 36 + build-tools 36.1, and bundletool
 node tools/build_web.mjs windows      # then: bash tools/build_windows.sh  (needs the .NET Framework C# compiler)
 ```
 
-The build scripts use ffmpeg to shrink images. The APK build creates its own signing key on first run; signing keys are never committed.
+The build scripts use ffmpeg to shrink images. The sideload APK build creates its own throwaway key on first run. The Google Play bundle is signed with a private upload key kept outside the project. Signing keys are never committed.
+
+Privacy policy: [devilexxon.github.io/skyrath/privacy.html](https://devilexxon.github.io/skyrath/privacy.html)
 
 ## Project layout
 
