@@ -8,6 +8,7 @@ import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js"
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { createWorld, heightAt, WORLD_RADIUS, CEILING, WATER_Y, CASTLE, VILLAGES } from "./world.js";
 import { createStory } from "./story.js";
+import { initCloud, cloudDirty, cloudSignIn, cloudChoose, cloudStatusText, cloud } from "./cloud.js";
 import { buildCrystalWorld } from "./crystal.js";
 import { createPortal } from "./portal.js";
 import { createMeta } from "./meta.js";
@@ -40,7 +41,9 @@ const groundAt = (x, z) => Math.max(heightAt(x, z), WATER_Y);
 // ---------------------------------------------------------------- save
 const save = { coins: 0, gems: 0, best: 0, gfx: "auto", seenStory: false };
 try { Object.assign(save, JSON.parse(localStorage.getItem("skyrath_save") || "{}")); } catch { /* storage unavailable */ }
-const persist = () => writeSave("skyrath_save", JSON.stringify(save));   // CrazyGames: saved to the player's account
+if (!save.sid) save.sid = Math.random().toString(36).slice(2, 10) + Date.now().toString(36);   // identifies this save "line" for cloud sync
+// CrazyGames: saved to the player's account. Android app: also copied to Google Play Games (cloud.js)
+const persist = () => { save.rev = (save.rev || 0) + 1; writeSave("skyrath_save", JSON.stringify(save)); cloudDirty(); };
 if (!save.gfxAuto) { save.gfx = "auto"; save.gfxAuto = true; }      // v1.5.1: everyone starts on Auto graphics once
 if (PLATFORM === "windows" && !save.gfxWin) { save.gfx = "high"; save.gfxWin = true; }   // the Windows app starts on High graphics
 const prog = createProgression(save, persist);
@@ -1653,6 +1656,7 @@ function choose(id, speak) {
   });
 }
 function showMenu() {
+  if (G.pendingRestore && applyCloudSave(G.pendingRestore)) return;      // a cloud save arrived during the run: load it now
   gameplayStop();
   clearRun();
   switchWorld("kingdom"); portal.close(); G.rift = false; G.warp = null; $("warp").style.opacity = "0";
@@ -1973,8 +1977,48 @@ function loadModel(key, file, store) {
 function loadLegend(id) { return loadModel(id, id, models).then((g) => { if (g && G.choice === id && G.state === "menu") choose(id, false); return g; }); }
 function loadGod(def) { return loadModel(def.id, def.file, godModels); }
 
+// ---------------------------------------------------------------- cloud save (Android app: Google Play Games)
+function restoreCloud(remote) {
+  if (G.state === "play" || G.state === "paused" || G.state === "down") { G.pendingRestore = remote; return; }   // never in the middle of a run
+  applyCloudSave(remote);
+}
+// writes the cloud copy as this phone's save and restarts the game with it
+function applyCloudSave(remote) {
+  G.pendingRestore = null;
+  try { localStorage.setItem("skyrath_save", JSON.stringify(remote)); sessionStorage.setItem("skyrath_restored", "1"); } catch { return false; }
+  location.reload();
+  return true;
+}
+function refreshCloudRow() {
+  const row = $("cloudRow");
+  if (!row) return;
+  row.classList.toggle("hidden", !cloud.supported);
+  $("cloudText").textContent = cloudStatusText();
+  $("cloudBtn").classList.toggle("hidden", !cloud.available || cloud.signedIn);
+}
+function setupCloud() {
+  initCloud({
+    current: () => save,
+    text: () => JSON.stringify(save),
+    restore: restoreCloud,
+    changed: refreshCloudRow,
+    ask(cloudText, localText) {
+      $("cloudPopCloud").textContent = cloudText; $("cloudPopLocal").textContent = localText;
+      $("cloudPop").classList.remove("hidden");
+    },
+  });
+  refreshCloudRow();
+  let restored = false;
+  try { restored = sessionStorage.getItem("skyrath_restored") === "1"; sessionStorage.removeItem("skyrath_restored"); } catch { /* ignore */ }
+  if (restored) setTimeout(() => toast("PROGRESS RESTORED", "From your Google Play Games account"), 1200);
+}
+$("cloudBtn").addEventListener("click", () => { audio.unlock(); audio.play("ui_tap", 1); cloudSignIn(); });
+$("cloudUseCloud").addEventListener("click", () => { $("cloudPop").classList.add("hidden"); cloudChoose(true); });
+$("cloudUseLocal").addEventListener("click", () => { $("cloudPop").classList.add("hidden"); cloudChoose(false); });
+
 async function boot() {
   await initPlatform();
+  setupCloud();
   loadingStart();
   if (hasSdk()) {                               // progress lives in the CrazyGames Data module (linked to their account)
     try { const cloud = JSON.parse(loadSave("skyrath_save") || "null"); if (cloud) Object.assign(save, cloud); } catch { /* keep local */ }
@@ -2012,6 +2056,6 @@ async function boot() {
   for (const id of LEGEND_IDS) if (skins.owns(id)) loadLegend(id);
   for (const id of [...IDS, ...LEGEND_IDS]) loadSkinTex(skinById(skins.equipped(id)));
 
-  window.SKYRATH = { G, save, audio, world, look, input, held, startStory, godModels, spawnGod: async () => { await loadGod(godForStage(G.stage).def); spawnGod(); }, loadGod, prog, refreshShop, openRift, switchWorld, hurtEnemy, makeType, spawnEnemy, meta, portal, get crystal() { return crystal; }, get story() { return story; } };
+  window.SKYRATH = { G, save, audio, world, look, input, held, startStory, godModels, spawnGod: async () => { await loadGod(godForStage(G.stage).def); spawnGod(); }, loadGod, prog, refreshShop, openRift, switchWorld, hurtEnemy, setupCloud, cloud, makeType, spawnEnemy, meta, portal, get crystal() { return crystal; }, get story() { return story; } };
 }
 boot().catch((err) => { $("loadText").textContent = `Could not load the game: ${err.message || err}`; console.error(err); });

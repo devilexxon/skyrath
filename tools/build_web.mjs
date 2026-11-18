@@ -12,7 +12,7 @@ import { fileURLToPath } from "node:url";
 const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const TARGET = process.argv[2] || "web";
 if (!["web", "crazygames", "android", "windows"].includes(TARGET)) throw new Error("target must be web, crazygames or android");
-const VER = (readFileSync(join(ROOT, "android", "AndroidManifest.xml"), "utf8").match(/versionName="([^"]+)"/) || [])[1] || "dev";
+const VER = (readFileSync(join(ROOT, "android", "version.properties"), "utf8").match(/versionName=(\S+)/) || [])[1] || "dev";
 const OUT = join(ROOT, "dist", TARGET === "web" ? "web" : `web-${TARGET}`);
 mkdirSync(join(ROOT, "dist", "release"), { recursive: true });
 const ZIP = TARGET === "android" || TARGET === "windows" ? null : join(ROOT, "dist", "release", TARGET === "web" ? `Skyrath-v${VER}-PC-Web-itchio.zip` : `Skyrath-v${VER}-CrazyGames.zip`);

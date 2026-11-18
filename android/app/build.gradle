@@ -1,0 +1,66 @@
+plugins {
+    id "com.android.application"
+}
+
+// one place for the version, shared with the web and Windows builds
+def ver = new Properties()
+file("../version.properties").withInputStream { ver.load(it) }
+def gamesAppId = (project.findProperty("skyrath.gamesAppId") ?: "").toString().trim()
+
+android {
+    namespace "com.skyrath.game"
+    compileSdk 36
+
+    defaultConfig {
+        minSdk 24
+        targetSdk 36
+        versionCode ver.getProperty("versionCode").trim().toInteger()
+        versionName ver.getProperty("versionName").trim()
+        resValue "string", "game_services_project_id", gamesAppId
+    }
+
+    signingConfigs {
+        // throwaway key for the hand-installed APK only (the Play bundle is signed afterwards with your private upload key)
+        sideload {
+            storeFile file("../skyrath-sideload.keystore")
+            storePassword "android"
+            keyAlias "skyrath"
+            keyPassword "android"
+        }
+    }
+
+    // play: the Google Play app (cloud save through Google Play Games)
+    // sideload: the APK you install by hand (keeps the old ID so existing installs update and keep their progress)
+    flavorDimensions "store"
+    productFlavors {
+        play {
+            dimension "store"
+            applicationId "com.devilexxon.skyrath"
+        }
+        sideload {
+            dimension "store"
+            applicationId "com.skyrath.game"
+            signingConfig signingConfigs.sideload
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    // the game files are copied here by tools/build_android.sh (not committed)
+    sourceSets {
+        main.assets.srcDirs = ["build/game-assets"]
+    }
+}
+
+dependencies {
+    implementation "com.google.android.gms:play-services-games-v2:22.1.0"
+}

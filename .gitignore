@@ -37,3 +37,9 @@ desktop.ini
 
 # ---- store listing graphics and text (kept locally, not published in the repo)
 store/
+
+# ---- Android / Gradle build files
+android/.gradle/
+android/app/build/
+android/build/
+android/local.properties

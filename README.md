@@ -24,6 +24,7 @@ Made by **Sabbir Ahmed Shuvo** ([DevilExxon](https://devilexxon.itch.io/)), a CS
 - **Solid world**: trees, houses, rocks and the castle all have collision; crashing hurts and bounces you off
 - **World hazards**: falling ice shards with a warning circle, and freezing wind zones
 - **Progression**: levels, upgrades, a shop, a 7-day login calendar, 3 daily missions, 12 achievements and personal bests
+- **Cloud save** on Android with Google Play Games: progress follows the player's Google account across reinstalls and phones
 - **Story intro** with voiced lines, music and sound effects
 - **Runs everywhere**: web (itch.io), CrazyGames (with their SDK), an Android APK and a Windows app, all from one codebase
 
@@ -44,6 +45,10 @@ Made by **Sabbir Ahmed Shuvo** ([DevilExxon](https://devilexxon.itch.io/)), a CS
 - **Lag on phones.** Sound effects used to restart a media player on every shot, which stalls iOS. They are now decoded once and played from buffers, with a cap on how many play at once. Graphics quality also lowers itself automatically when the frame rate drops.
 - **A new world without a bigger download.** The crystal world's terrain, ice and sky are generated procedurally with shaders, and enemies are recoloured instead of using new models, so the world adds only kilobytes.
 - **One codebase, four platforms.** The build script injects the target platform and copies only the assets the game loads. Models ship with shrunk textures, so the initial download is about 16 MB.
+- **Never losing progress.** On Android, the save is mirrored to the player's Google account through Google Play Games
+  (Saved Games), via a small Java bridge into the game's web view. Each save carries a line ID and a revision number, so a
+  fresh install restores the cloud copy, the newest copy wins on the same save line, and the player chooses only when two
+  different saves both have real progress. A restore never interrupts a run.
 - **Phone controls on many screen sizes.** The on-screen buttons lay themselves out to avoid overlapping the HUD bars on small and notched screens.
 
 ## Controls
@@ -75,8 +80,8 @@ Then open http://localhost:5173/. On Windows you can also double-click `Play Sky
 ```bash
 node tools/build_web.mjs web          # itch.io / any web host  -> dist/web
 node tools/build_web.mjs crazygames   # CrazyGames (adds their SDK) -> dist/web-crazygames
-node tools/build_web.mjs android      # then: bash tools/build_apk.sh  (sideload APK)  or  bash tools/build_aab.sh  (Google Play bundle)
-                                      #   needs JDK 17, Android SDK platform 36 + build-tools 36.1, and bundletool
+node tools/build_web.mjs android      # then: bash tools/build_android.sh  (Gradle: sideload APK + Google Play bundle)
+                                      #   needs JDK 17 and the Android SDK (platform 36); Gradle is downloaded by the wrapper
 node tools/build_web.mjs windows      # then: bash tools/build_windows.sh  (needs the .NET Framework C# compiler)
 ```
 
@@ -95,11 +100,12 @@ game/            index.html, style.css and the game code (game/src/*.js)
   src/gods.js      god bosses
   src/meta.js      daily rewards, missions, achievements
   src/audio.js     Web Audio music, effects and voices
+  src/cloud.js     cloud save sync (Android: Google Play Games)
   src/platform.js  CrazyGames SDK layer
 assets/          optimized 3D models, audio, dragon card art and skins
 vendor/          Three.js
 tools/           build, dev-server and asset scripts
-android/         Android app (WebView) source and manifest
+android/         Android app (Gradle project: WebView + Google Play Games cloud save bridge)
 windows/         Windows launcher source
 docs/            screenshots for this README
 ```

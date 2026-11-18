@@ -17,10 +17,12 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.HashMap;
 
-/** Full-screen landscape web view that serves the bundled game from the APK's assets. No network is used. */
+/** Full-screen landscape web view that serves the bundled game from the app's assets, plus Play Games cloud save. */
 public class MainActivity extends Activity {
     private static final String HOST = "https://skyrath.local/";
     private WebView web;
+    private CloudSave cloud;
+    private boolean cloudStarted = false;
 
     @Override
     protected void onCreate(Bundle state) {
@@ -32,7 +34,18 @@ public class MainActivity extends Activity {
         s.setJavaScriptEnabled(true);
         s.setDomStorageEnabled(true);
         s.setMediaPlaybackRequiresUserGesture(false);
+        cloud = new CloudSave(this, web, getString(R.string.game_services_project_id));
+        web.addJavascriptInterface(cloud, "SkyrathAndroid");
         web.setWebViewClient(new WebViewClient() {
+            @Override
+            public void onPageFinished(WebView view, String url) {
+                // the game is ready to receive answers: check the automatic Play Games sign-in once
+                if (!cloudStarted && url != null && url.startsWith(HOST)) {
+                    cloudStarted = true;
+                    cloud.start();
+                }
+            }
+
             @Override
             public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
                 String url = request.getUrl().toString();
@@ -114,6 +127,8 @@ public class MainActivity extends Activity {
     @Override
     protected void onPause() {
         super.onPause();
+        // send any save that is still waiting to the cloud before the app goes to the background
+        web.evaluateJavascript("window.skyrathCloud && window.skyrathCloud.flush()", null);
         web.onPause();
     }
 

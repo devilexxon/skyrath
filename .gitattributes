@@ -6,3 +6,6 @@
 *.jpg binary
 *.mp3 binary
 *.webp binary
+gradlew text eol=lf
+*.bat text eol=crlf
+*.jar binary

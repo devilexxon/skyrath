@@ -3,12 +3,12 @@
 #   node tools/build_web.mjs windows && bash tools/build_windows.sh
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-VER="$(grep -o 'versionName="[^"]*"' "$ROOT/android/AndroidManifest.xml" | cut -d'"' -f2)"
+VER="$(grep -o 'versionName=.*' "$ROOT/android/version.properties" | cut -d= -f2 | tr -d '\r')"
 OUT="$ROOT/build/windows/Skyrath"
 [ -f "$ROOT/dist/web-windows/index.html" ] || { echo "run: node tools/build_web.mjs windows first"; exit 1; }
 rm -rf "$ROOT/build/windows"; mkdir -p "$OUT"
 cp -r "$ROOT/dist/web-windows" "$OUT/game"
-ffmpeg -hide_banner -loglevel error -y -i "$ROOT/android/res/mipmap-xxxhdpi/ic_launcher.png" -vf scale=256:256 "$ROOT/build/windows/skyrath.ico"
+ffmpeg -hide_banner -loglevel error -y -i "$ROOT/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" -vf scale=256:256 "$ROOT/build/windows/skyrath.ico"
 /c/Windows/Microsoft.NET/Framework64/v4.0.30319/csc.exe -nologo -optimize -target:winexe \
   -win32icon:"$(cygpath -w "$ROOT/build/windows/skyrath.ico")" -r:System.Windows.Forms.dll \
   -out:"$(cygpath -w "$OUT/Skyrath.exe")" "$(cygpath -w "$ROOT/windows/SkyrathLauncher.cs")"

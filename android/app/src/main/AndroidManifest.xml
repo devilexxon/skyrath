@@ -1,19 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.skyrath.game"
-    android:versionCode="18"
-    android:versionName="1.8.3">
+<!-- App ID, version and SDK levels are set in app/build.gradle (and android/version.properties). -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <uses-sdk android:minSdkVersion="24" android:targetSdkVersion="36" />
-    <!-- The game is fully offline; this permission only lets the built-in web view start. -->
+    <!-- The game itself is offline; the internet permission lets the built-in web view start and lets
+         Google Play Games keep a cloud copy of the save when the player is signed in. -->
     <uses-permission android:name="android.permission.INTERNET" />
 
     <application
         android:label="Skyrath"
         android:icon="@mipmap/ic_launcher"
         android:hardwareAccelerated="true"
+        android:allowBackup="true"
         android:enableOnBackInvokedCallback="true"
         android:theme="@android:style/Theme.NoTitleBar.Fullscreen">
+
+        <!-- Google Play Games project ID (from Play Console -> Play Games Services). Empty = cloud save off. -->
+        <meta-data
+            android:name="com.google.android.gms.games.APP_ID"
+            android:value="@string/game_services_project_id" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true"
