@@ -63,7 +63,7 @@
     <div id="cards"></div>
     <button id="startBtn" class="cta" disabled>Loading&hellip;</button>
     <button id="continueBtn" class="cta ghost hidden">Continue</button>
-    <p class="ver">v1.10.0</p>
+    <p class="ver">v1.10.1</p>
   </div>
   <div id="tab-upgrades" class="tabpanel hidden">
     <p class="note">Upgrades are permanent and work for every dragon. Earn coins by defeating enemies.</p>
@@ -86,6 +86,7 @@
     <div id="shop-skins" class="shoppanel hidden"><div id="skinPick" class="seg"></div><div id="skinRow"></div></div>
     <div id="shop-items" class="shoppanel hidden">
     <div class="shopgrid">
+      <div class="sitem hidden" id="adCoinsItem"><b>Free coins</b><span>Watch a short ad for coins. Every 3rd ad also gives you a gem.</span><button id="adCoinsBtn" class="cta slim"><svg class="vid" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="5" width="15" height="14" rx="3"/><path d="M17 10l5-3v10l-5-3z"/></svg> Watch an ad</button><em id="adCoinsMsg"></em></div>
       <div class="sitem"><b>Free chest</b><span>Coins and gems every 4 hours. Bigger as your best stage grows.</span><button id="chestBtn" class="cta slim">Open free chest</button><button id="chestAdBtn" class="cta slim hidden"><svg class="vid" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="5" width="15" height="14" rx="3"/><path d="M17 10l5-3v10l-5-3z"/></svg> Watch an ad to open now</button><em id="chestMsg"></em></div>
       <div class="sitem"><b>Phoenix Feather</b><span id="featherInfo"></span><button id="featherBuy" class="cta slim"><span class="ico gem"></span> 5 gems</button></div>
       <div class="sitem"><b>Exchange</b><span>Turn gems into coins: 1 gem = 60 coins.</span><div class="row"><button id="exch1" class="cta slim ghost">1 gem</button><button id="exch10" class="cta slim ghost">10 gems</button></div></div>
@@ -102,7 +103,9 @@
   <button id="adReviveBtn" class="cta hidden"><svg class="vid" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="5" width="15" height="14" rx="3"/><path d="M17 10l5-3v10l-5-3z"/></svg> Watch an ad to revive</button>
   <button id="featherBtn" class="cta"></button>
   <button id="reviveBtn" class="cta"></button>
+  <button id="downUpg" class="cta ghost">Upgrade your dragon</button>
   <button id="quitBtn" class="cta ghost">Back to menu</button>
+  <p id="downHint" class="note">Too strong? Spend your coins on Power, Vitality and Armor to go further.</p>
 </div>
 
 <div id="paused" class="overlay hidden">
@@ -123,6 +126,7 @@
     <div class="srow"><span>Screen shake</span><div class="seg" id="shakeSeg"><button data-v="on">On</button><button data-v="off">Off</button></div></div>
     <div class="srow" id="fsRow"><span>Screen</span><button id="fsBtn" class="mini">Full screen</button></div>
     <div class="srow"><span>Controls</span><button id="hudEditBtn" class="mini">Edit layout</button></div>
+    <div class="srow hidden" id="adPrivRow"><span>Ad privacy</span><button id="adPrivBtn" class="mini">Privacy options</button></div>
     <div class="srow"><span>Story</span><button id="storyBtn" class="mini">Watch the story</button></div>
     <div class="srow hidden" id="cloudRow"><span>Cloud save</span><div class="cloudbox"><small id="cloudText"></small><button id="cloudBtn" class="mini hidden">Sign in with Google Play Games</button></div></div>
     <p class="note">How to play. Phone: the stick flies in every direction (turn, climb, dive); point at an enemy and it locks on. FIRE shoots (hold to charge a blast), BREATH burns up close, BOOST speeds up, DODGE rolls, SURGE unleashes your power. PC: W A S D or arrow keys fly, Space or left click fire, right click breath, Shift boost, Q / E dodge, F surge, Esc or P pause.</p>
@@ -152,6 +156,7 @@
     </div>
     <p id="resBonus"></p>
     <p id="resBest" class="hidden">NEW BEST STAGE!</p>
+    <button id="resAd" class="cta slim hidden"><svg class="vid" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="5" width="15" height="14" rx="3"/><path d="M17 10l5-3v10l-5-3z"/></svg> Watch an ad: double coins</button>
     <div class="resbtns"><button id="resNext" class="cta">Next stage</button><button id="resHome" class="cta ghost">Home</button></div>
   </div>
 </div>

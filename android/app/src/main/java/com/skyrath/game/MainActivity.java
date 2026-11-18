@@ -22,6 +22,7 @@ public class MainActivity extends Activity {
     private static final String HOST = "https://skyrath.local/";
     private WebView web;
     private CloudSave cloud;
+    private AdsBridge ads;
     private boolean cloudStarted = false;
 
     @Override
@@ -36,6 +37,8 @@ public class MainActivity extends Activity {
         s.setMediaPlaybackRequiresUserGesture(false);
         cloud = new CloudSave(this, web, getString(R.string.game_services_project_id));
         web.addJavascriptInterface(cloud, "SkyrathAndroid");
+        ads = new AdsBridge(this, web, getString(R.string.admob_rewarded_id));
+        web.addJavascriptInterface(ads, "SkyrathAds");
         web.setWebViewClient(new WebViewClient() {
             @Override
             public void onPageFinished(WebView view, String url) {
@@ -43,6 +46,7 @@ public class MainActivity extends Activity {
                 if (!cloudStarted && url != null && url.startsWith(HOST)) {
                     cloudStarted = true;
                     cloud.start();
+                    ads.start();
                 }
             }
 

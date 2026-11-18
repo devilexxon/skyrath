@@ -15,7 +15,7 @@ import { createMeta } from "./meta.js";
 import { GodBoss, godForStage, godAttack, godMove, GODS } from "./gods.js";
 import { createProgression, UPGRADES, upgradeCost, FEATHER_GEMS, GEM_TO_COINS } from "./progression.js";
 import { FX, ELEMENTS } from "./fx.js";
-import { PLATFORM, IS_CRAZY, isMobile, initPlatform, hasSdk, setHooks, loadSave, writeSave, loadingStart, loadingStop, gameplayStart, gameplayStop, happytime, watchMuteSetting, rewardedAvailable, showRewarded, showMidgame } from "./platform.js";
+import { PLATFORM, IS_CRAZY, isMobile, initPlatform, hasSdk, setHooks, loadSave, writeSave, loadingStart, loadingStop, gameplayStart, gameplayStop, happytime, watchMuteSetting, rewardedAvailable, showRewarded, showMidgame, adPrivacyRequired, openAdPrivacy } from "./platform.js";
 import { SKINS, LEGENDS, RARITY, skinById, skinsFor, skinState } from "./skins.js";
 import { AudioMgr } from "./audio.js";
 
@@ -507,7 +507,7 @@ let resultsBoss = false;
 function stageStars(wasBoss) {
   const p = G.player, sr = G.stageRun;
   const taken = (G.run.taken - sr.taken0) / p.maxHp, secs = G.time - sr.t0;
-  const par = 30 + 28 * G.waves + (wasBoss ? 45 : 0);
+  const par = 12 * (G.stageTotal || 8) + (wasBoss ? 45 : 0);
   if (taken < 0.2 && secs < par) return 3;
   if (taken < 0.65 && secs < par * 1.7) return 2;
   return 1;
@@ -529,9 +529,13 @@ function showResults(wasBoss) {
   $("resTime").textContent = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`;
   $("resCombo").textContent = String(sr.combo);
   $("resBonus").textContent = `${"★".repeat(stars)} bonus: +${bonus} coins`;
+  G.resAdCoins = sr.coins + bonus;
+  const ra = $("resAd");
+  ra.classList.toggle("hidden", !rewardedAvailable() || G.resAdCoins <= 0);
+  ra.disabled = false; ra.innerHTML = `${VID_ICON} Watch an ad: double coins (+${G.resAdCoins})`;
   $("resBest").classList.toggle("hidden", !(G.stage >= save.best && G.bestAtStart > 0 && G.stage > G.bestAtStart));
   $("resNext").textContent = wasBoss && G.stage % 10 === 0 ? "Enter the rift" : `Next: stage ${G.stage + 1}`;
-  G.state = "results"; G.clearing = false;
+  G.state = "results";
   input.queue.length = 0; held.fire = held.breath = held.boost = false;
   $("results").classList.remove("hidden");
   audio.play("level_up", 0.7);
@@ -614,7 +618,7 @@ function clearRun() {
   for (const c of G.pickups) c.s.removeFromParent();
   G.enemies.length = G.shots.length = G.pickups.length = 0;
   if (G.player) { G.player.dragon.dispose(); G.player = null; }
-  G.lock = G.target = null; G.nextStageT = 0; G.spawnT = 0; G.spawnQueue.length = 0;
+  G.lock = G.target = null; G.nextStageT = 0; G.spawnT = 0; G.spawnQueue.length = 0; G.resultsAt = 0; G.toSpawn = 0; G.nextWaveT = 0;
   $("bossbar").classList.add("hidden"); popHolder.textContent = "";
 }
 
@@ -628,7 +632,7 @@ function nextStage(delay) {
   world.setStage(G.stage);
   meta.stageStarted(G, G.player);
   G.stageRun = { t0: G.time, coins: 0, gems: 0, kills: 0, combo: 0, taken0: G.run.taken };
-  G.clearing = false;
+  G.resultsAt = 0; G.toSpawn = 0; G.stageLeft = 0; G.wave = 1; G.waves = 1; G.nextWaveT = 0;
   if (G.stage > save.best) {
     save.best = G.stage; persist();
     if (G.bestAtStart > 0 && !G.newBestShown) { G.newBestShown = true; setTimeout(() => { if (G.state === "play") toast("NEW BEST!", `You reached stage ${G.stage}`); }, 2600); }
@@ -807,20 +811,40 @@ function typeBehaviour(e, dt, p, dist, dmg) {
 // dragons are built one per frame (building one is heavy), so a new wave never makes the game stutter
 const spawnLater = (fn) => G.spawnQueue.push(fn);
 // fewer dragons, but tougher: never more than 4 at once; later stages send them in waves instead of a crowd
-const enemyHp = () => 70 * Math.pow(1.15, G.stage - 1);
-const waveSize = (stage) => Math.min(1 + Math.floor(stage / 3), 4);
-const wavesFor = (stage) => (stage >= 16 ? 3 : stage >= 8 ? 2 : 1);
+// A stage is a stream of dragons split into waves: never many at once, but always something to fight.
+// Later stages bring more dragons, more waves, and tougher ones (upgrade your dragon to keep up).
+const enemyHp = () => 70 * Math.pow(1.12, G.stage - 1) * (1 + 0.08 * ((G.wave || 1) - 1));
+const stageTotal = (st) => Math.min(30, 8 + 2 * (st - 1));               // dragons in a whole stage
+const atOnce = (st) => (st <= 2 ? 2 : st <= 5 ? 3 : st <= 9 ? 4 : 5);    // how many may fight you at the same time
+const wavesFor = (st) => Math.min(6, 2 + Math.floor(st / 4));
+function spawnCounted(boss) {
+  spawnEnemy(boss);
+  const e = G.enemies[G.enemies.length - 1];
+  if (e) e.counted = true;          // counts toward "dragons left" in this stage
+}
+function startWave() {
+  G.toSpawn = G.waveSizes[G.wave - 1] || 0;
+  const n = Math.min(G.cap, G.toSpawn);
+  for (let i = 0; i < n; i++) { G.toSpawn--; spawnLater(() => spawnCounted(false)); }
+  G.reinT = 2.5;
+}
 function spawnWave(next) {
-  if (!next) { G.wave = 1; G.waves = G.pendingBoss ? 1 : wavesFor(G.stage); }
+  if (next) { startWave(); return; }
+  G.wave = 1;
   if (G.pendingBoss) {
-    spawnEnemy(true);
-    if (G.stage >= 10) spawnLater(() => spawnEnemy(false));            // one escort from stage 10
+    // the god, a stream of escorts (at most 2 at once) and two small wisps around it
+    const escorts = 4 + Math.floor(G.stage / 5);
+    G.waves = 1; G.waveSizes = [escorts]; G.cap = 2; G.stageTotal = escorts + 1; G.stageLeft = G.stageTotal;
+    spawnCounted(true);
     const pack = { a: rand(0, Math.PI * 2), orbit: Math.random() < 0.5 ? 1 : -1 };
-    for (let i = 0; i < 2; i++) spawnLater(() => spawnEnemy(false, pack));   // two small wisps around the god
+    for (let i = 0; i < 2; i++) spawnLater(() => spawnEnemy(false, pack));
   } else {
-    for (let i = 0; i < waveSize(G.stage); i++) spawnLater(() => spawnEnemy(false));
+    const total = stageTotal(G.stage), waves = wavesFor(G.stage), base = Math.floor(total / waves);
+    G.waves = waves; G.cap = atOnce(G.stage); G.stageTotal = total; G.stageLeft = total;
+    G.waveSizes = Array.from({ length: waves }, (_, i) => base + (i >= waves - (total - base * waves) ? 1 : 0));   // later waves get the extras
   }
-  if (G.stage === 1 && !next) audio.say("announcer", "fight", 0, true);
+  startWave();
+  if (G.stage === 1) audio.say("announcer", "fight", 0, true);
 }
 
 const shotMats = new Map();
@@ -959,6 +983,7 @@ function killEnemy(e, rammed) {
   p.ult = Math.min(100, p.ult + (e.boss ? 40 : 14));
   G.streak = G.streakT > 0 ? G.streak + 1 : 1; G.streakT = 4;
   G.run.kills++; G.stageRun.kills++;
+  if (e.counted) G.stageLeft = Math.max(0, (G.stageLeft || 0) - 1);
   if (e.godDef) { happytime(); G.lastGod = e.godDef.name.split(",")[0]; G.run.godKills++; const secs = Math.round((performance.now() - e.born) / 1000); setTimeout(() => pop(`DEFEATED IN ${secs}s`, "level"), 900); }
   pop(e.godDef ? "GOD SLAIN!" : e.boss ? "WYRM SLAIN!" : ["DOWN!", "DOUBLE DOWN!", "TRIPLE DOWN!", "RAMPAGE!"][Math.min(3, G.streak - 1)], "down", e.pos, e.name);
   const coins = e.swarm ? 1 : (e.boss ? 60 : 6) + G.stage;
@@ -1353,8 +1378,15 @@ function updateEnemies(dt) {
       fx.ring(e.pos, 0xff2e63, 120, 0.8, camera);
     }
     tmp.copy(p.pos).sub(e.pos);
-    const dist = tmp.length() || 1;
-    e.dragon.setOutline(QUAL.detail === "high" || e.boss || dist < 260);
+    let dist = tmp.length() || 1;
+    if (dist > 1500 && !e.godDef) {          // a dragon that wandered off (or got stuck) comes back, so a stage can always end
+      const a = rand(0, Math.PI * 2);
+      e.pos.set(p.pos.x + Math.cos(a) * 350, 0, p.pos.z + Math.sin(a) * 350);
+      e.pos.y = clamp(p.pos.y + rand(-30, 30), groundAt(e.pos.x, e.pos.z) + 90, CEILING - 60);
+      e.vel.set(0, 0, 0);
+      tmp.copy(p.pos).sub(e.pos); dist = tmp.length() || 1;
+    }
+    if (e.dragon.setOutline) e.dragon.setOutline(QUAL.detail === "high" || e.boss || dist < 260);   // gods have no outline mesh
     tmp.divideScalar(dist);
     if (e.godDef) {                                   // gods drift, swoop and teleport, face you, and fight with their own patterns
       const busy = godMove(e, edt, godCtx);
@@ -1557,24 +1589,41 @@ function updateStage(dt) {
     return;
   }
   if (G.spawnQueue.length) { G.spawnQueue.shift()(); return; }
+  // the results screen opens a moment after the last kill; checked here, so a pause only delays it
+  if (G.resultsAt) { if (G.time >= G.resultsAt) { G.resultsAt = 0; showResults(G.resultsBoss); } return; }
   if (G.nextWaveT > 0) { G.nextWaveT -= dt; if (G.nextWaveT <= 0) spawnWave(true); return; }
   if (G.nextStageT > 0) { G.nextStageT -= dt; if (G.nextStageT <= 0) nextStage(1.6); return; }
-  if (G.clearing) return;
-  if (!G.enemies.some((e) => e.state === "alive") && G.state === "play") {
-    if (G.wave < G.waves) {                      // next wave of this stage
-      G.wave++; G.nextWaveT = 2.4;
-      banner(`WAVE ${G.wave} OF ${G.waves}`, "MORE DRAGONS INCOMING", 2);
-      audio.say("announcer", "next_wave", 0);
-      return;
-    }
-    const p = G.player;
-    const wasBoss = G.pendingBoss;
-    G.clearing = true;
-    meta.stageCleared(G, p);
-    $("bossbar").classList.add("hidden");
-    if (wasBoss) { audio.say("announcer", "victory", 0, true); p.dragon.once("roar"); audio.play("dragon_roar", 0.8); setTimeout(() => audio.say(p.voice, "win", 0), 1800); }
-    setTimeout(() => { if (G.state === "play" && G.player && G.clearing) showResults(wasBoss); }, 1300);   // let the last kill play out first
+  if (G.state !== "play") return;
+  let alive = 0, countedAlive = 0, godAlive = false;
+  for (const e of G.enemies) {
+    if (e.state !== "alive") continue;
+    alive++;
+    if (e.counted && !e.boss) countedAlive++;
+    if (e.godDef || (e.boss && e.counted)) godAlive = true;
   }
+  if (G.pendingBoss && !godAlive) G.toSpawn = 0;          // no more escorts once the god has fallen
+  // reinforcements: another dragon joins whenever there is room (fast if the sky is empty)
+  if (G.toSpawn > 0) {
+    G.reinT -= dt;
+    if (countedAlive === 0) G.reinT = Math.min(G.reinT, 0.6);
+    if (countedAlive < G.cap && G.reinT <= 0) { G.reinT = rand(2, 3.5); G.toSpawn--; spawnLater(() => spawnCounted(false)); }
+    return;
+  }
+  if (alive > 0) return;
+  if (G.wave < G.waves) {                        // next wave of this stage
+    G.wave++; G.nextWaveT = 3;
+    banner(`WAVE ${G.wave} OF ${G.waves}`, G.wave === G.waves ? "FINAL WAVE" : "MORE DRAGONS INCOMING", 2.2);
+    audio.say("announcer", "next_wave", 0);
+    return;
+  }
+  // stage cleared
+  const p = G.player;
+  const wasBoss = G.pendingBoss;
+  G.stageLeft = 0;
+  meta.stageCleared(G, p);
+  $("bossbar").classList.add("hidden");
+  if (wasBoss) { audio.say("announcer", "victory", 0, true); p.dragon.once("roar"); audio.play("dragon_roar", 0.8); setTimeout(() => audio.say(p.voice, "win", 0), 1800); }
+  G.resultsAt = G.time + 1.3; G.resultsBoss = wasBoss;     // let the last kill play out first
 }
 
 // ---------------------------------------------------------------- camera and HUD
@@ -1629,7 +1678,7 @@ function updateHud() {
   setTf("chargeFill", p.charge); setCls("charge", "full", p.charge >= 1);
   const alive = aliveBuf; alive.length = 0;
   for (const e of G.enemies) if (e.state === "alive") alive.push(e);
-  setTxt("foes", alive.length ? `ENEMIES ${alive.length}` : "");
+  setTxt("foes", G.stageLeft > 0 ? `DRAGONS LEFT ${G.stageLeft}` : alive.length ? `ENEMIES ${alive.length}` : "");
   const boss = alive.find((e) => e.boss);
   if (boss) setTf("bossFill", clamp(boss.hp / boss.maxHp, 0, 1));
   if (G.combo >= 5) { setTxt("combo", `${G.combo} HIT COMBO`); setCls("combo", "show", true); } else setCls("combo", "show", false);
@@ -1871,6 +1920,7 @@ $("resHome").addEventListener("click", () => { audio.unlock(); audio.play("ui_ta
 const fmt = (n) => n >= 10000 ? (n / 1000).toFixed(n >= 100000 ? 0 : 1) + "k" : String(n);
 function refreshShop() {
   $("mCoins").textContent = fmt(save.coins); $("mGems").textContent = fmt(save.gems);
+  if (typeof refreshAdCoins === "function") try { refreshAdCoins(); } catch { /* defined further down */ }
   const list = $("upgList");
   list.textContent = "";
   for (const u of UPGRADES) {
@@ -1953,6 +2003,51 @@ for (const t of document.querySelectorAll("#tabs .tab")) {
   });
 }
 const AD_REVIVE_HTML = $("adReviveBtn").innerHTML;
+// ---- rewarded ads for coins (CrazyGames SDK, or AdMob in the Google Play app). Always optional; paid only when the ad finishes.
+const VID_ICON = $("adCoinsBtn").querySelector("svg").outerHTML;
+const adCoinAmount = () => 40 + 8 * Math.max(1, save.best || 0);
+const AD_COOLDOWN = 30000;
+let adCoinsAt = 0;
+function refreshAdCoins() {
+  const item = $("adCoinsItem");
+  item.classList.toggle("hidden", !rewardedAvailable());
+  const wait = Math.ceil((adCoinsAt + AD_COOLDOWN - Date.now()) / 1000), b = $("adCoinsBtn");
+  b.disabled = wait > 0;
+  b.innerHTML = VID_ICON + (wait > 0 ? ` Next ad in ${wait}s` : ` Watch an ad: +${adCoinAmount()} coins`);
+}
+setInterval(() => { if (G.state === "menu" && !$("adCoinsItem").classList.contains("hidden")) refreshAdCoins(); }, 1000);
+$("adCoinsBtn").addEventListener("click", async () => {
+  if (Date.now() - adCoinsAt < AD_COOLDOWN) return;
+  const b = $("adCoinsBtn"); b.disabled = true;
+  const ok = await showRewarded();
+  if (!ok) { $("adCoinsMsg").textContent = "No ad available right now. Try again in a moment."; refreshAdCoins(); return; }
+  const coins = adCoinAmount();
+  save.coins += coins; save.adCount = (save.adCount || 0) + 1;
+  const gem = save.adCount % 3 === 0;
+  if (gem) save.gems += 1;
+  adCoinsAt = Date.now(); persistNow();
+  audio.play("coin_pickup", 1);
+  $("adCoinsMsg").textContent = `+${coins} coins${gem ? " and +1 gem" : ""}!`;
+  refreshShop(); refreshAdCoins();
+});
+// results screen: double this stage's coins
+$("resAd").addEventListener("click", async () => {
+  const amt = G.resAdCoins || 0;
+  if (!amt || G.state !== "results") return;
+  const b = $("resAd"); b.disabled = true;
+  const ok = await showRewarded();
+  b.disabled = false;
+  if (!ok) { b.textContent = "No ad available right now"; return; }
+  save.coins += amt; G.resAdCoins = 0; persistNow();
+  audio.play("coin_pickup", 1);
+  $("resCoins").textContent = `+${amt * 2}`;
+  b.classList.add("hidden");
+});
+$("downUpg").addEventListener("click", () => {
+  audio.unlock(); audio.play("ui_tap", 1);
+  showMenu();
+  const t = document.querySelector('.tab[data-tab="upgrades"]'); if (t) t.click();
+});
 // rewarded ads (CrazyGames build only): optional, clearly marked, reward only after the ad finishes
 $("chestAdBtn").addEventListener("click", async () => {
   const b = $("chestAdBtn"); b.disabled = true;
@@ -2055,6 +2150,7 @@ function refreshSettings() {
   for (const [id, key] of [["volMusic", "music"], ["volSfx", "sfx"], ["volVoice", "voice"]]) { $(id).value = SET[key]; $(id + "V").textContent = SET[key]; }
   for (const b of $("gfxSeg").children) b.classList.toggle("on", b.dataset.v === save.gfx);
   for (const b of $("fpsSeg").children) b.classList.toggle("on", Number(b.dataset.v) === playCap());
+  $("adPrivRow").classList.toggle("hidden", !adPrivacyRequired());
   for (const b of $("shakeSeg").children) b.classList.toggle("on", (b.dataset.v === "on") === SET.shake);
 }
 for (const [id, key] of [["volMusic", "music"], ["volSfx", "sfx"], ["volVoice", "voice"]]) {
@@ -2065,6 +2161,7 @@ for (const b of $("gfxSeg").children) b.addEventListener("click", () => { save.g
 for (const b of $("fpsSeg").children) b.addEventListener("click", () => { SET.fps = Number(b.dataset.v); SET.fpsSet = true; persist(); refreshSettings(); });
 for (const b of $("shakeSeg").children) b.addEventListener("click", () => { SET.shake = b.dataset.v === "on"; persist(); refreshSettings(); });
 for (const b of document.querySelectorAll(".setOpen")) b.addEventListener("click", () => { audio.unlock(); refreshSettings(); $("settings").classList.remove("hidden"); });
+$("adPrivBtn").addEventListener("click", () => openAdPrivacy());
 $("setClose").addEventListener("click", () => { persist(); $("settings").classList.add("hidden"); });
 applySettings();
 $("featherBtn").addEventListener("click", () => {

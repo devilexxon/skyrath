@@ -54,9 +54,23 @@ export function watchMuteSetting() {
   try { sdk.game.addSettingsChangeListener(apply); } catch { /* ignore */ }
 }
 
-// --- ads (CrazyGames only). Rewarded ads are always optional; the reward is given only when the ad finishes.
-export const rewardedAvailable = () => !!sdk;
+// --- ads: CrazyGames SDK on CrazyGames, AdMob in the Google Play app (window.SkyrathAds). Rewarded ads are always
+// optional; the reward is given only when the ad finishes.
+const androidAds = () => { try { return !!(window.SkyrathAds && window.SkyrathAds.available()); } catch { return false; } };
+export const rewardedAvailable = () => !!sdk || androidAds();
 let adRunning = false;
+function requestAndroidAd() {
+  return new Promise((resolve) => {
+    if (adRunning) { resolve(false); return; }
+    adRunning = true;
+    hooks.mute("ad", true); hooks.pause(true);
+    window.skyrathAdDone = (ok) => { window.skyrathAdDone = null; adRunning = false; hooks.mute("ad", false); hooks.pause(false); resolve(!!ok); };
+    try { window.SkyrathAds.show(); } catch { window.skyrathAdDone(false); }
+  });
+}
+// Google's privacy / consent options (needed for players in Europe); shown as a Settings button when required
+export const adPrivacyRequired = () => { try { return !!(window.SkyrathAds && window.SkyrathAds.privacyRequired()); } catch { return false; } };
+export const openAdPrivacy = () => { try { window.SkyrathAds.privacy(); } catch { /* not available */ } };
 function requestAd(type) {
   return new Promise((resolve) => {
     if (!sdk || adRunning) { resolve(false); return; }
@@ -71,5 +85,5 @@ function requestAd(type) {
     } catch (err) { end(false); }
   });
 }
-export const showRewarded = () => requestAd("rewarded");
+export const showRewarded = () => (!sdk && androidAds() ? requestAndroidAd() : requestAd("rewarded"));
 export const showMidgame = () => requestAd("midgame");   // the SDK itself limits these to one every ~3 minutes

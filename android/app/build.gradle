@@ -6,6 +6,10 @@ plugins {
 def ver = new Properties()
 file("../version.properties").withInputStream { ver.load(it) }
 def gamesAppId = (project.findProperty("skyrath.gamesAppId") ?: "").toString().trim()
+// AdMob: your app ID and rewarded ad unit ID (android/gradle.properties). Until they are set, Google's test IDs are used
+// (ads show as "Test Ad" and earn nothing).
+def admobAppId = (project.findProperty("skyrath.admobAppId") ?: "").toString().trim() ?: "ca-app-pub-3940256099942544~3347511713"
+def admobRewardedId = (project.findProperty("skyrath.admobRewardedId") ?: "").toString().trim() ?: "ca-app-pub-3940256099942544/5224354917"
 
 android {
     namespace "com.skyrath.game"
@@ -18,6 +22,8 @@ android {
         versionCode ver.getProperty("versionCode").trim().toInteger()
         versionName ver.getProperty("versionName").trim()
         resValue "string", "game_services_project_id", gamesAppId
+        resValue "string", "admob_app_id", admobAppId
+        resValue "string", "admob_rewarded_id", admobRewardedId
     }
 
     buildTypes {
@@ -39,4 +45,5 @@ android {
 
 dependencies {
     implementation "com.google.android.gms:play-services-games-v2:22.1.0"
+    implementation "com.google.android.gms:play-services-ads:25.5.0"
 }

@@ -64,15 +64,15 @@ canvas#view { position: fixed; inset: 0; width: 100%; height: 100%; display: blo
 #stickKnob { position: absolute; left: 50%; top: 50%; width: 58px; height: 58px; margin: -29px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #fff, #d8d2c4); box-shadow: 0 3px 10px #0006; }
 #buttons { position: absolute; right: max(14px, env(safe-area-inset-right)); bottom: 14px; width: 300px; height: 280px; }
 .btn { position: absolute; border-radius: 50%; border: 2px solid rgba(255,255,255,.75); background: rgba(13,22,38,.45); color: #fff; font: 700 11px/1.15 inherit; letter-spacing: 1px; padding: 0; }
-.btn.on, .btn:active { background: rgba(255,255,255,.3); transform: scale(.95); }
+.btn.on, .btn:active { background: rgba(255,255,255,.3); scale: .95; }
 .btn.big { width: 112px; height: 112px; right: 0; bottom: 0; font-size: 15px; }
 .btn.mid { width: 72px; height: 72px; }
 .btn.small { width: 64px; height: 64px; }
 .btn.tiny { width: 40px; height: 40px; left: 50%; top: 8px; margin-left: -20px; font-size: 13px; }
 .btn.gold { border-color: var(--gold); color: var(--gold); }
-.btn.gold.ready { background: rgba(255, 190, 60, .45); color: #fff; box-shadow: 0 0 18px #ffbe3c; animation: pulse 1s infinite; }
+.btn.gold.ready { background: rgba(255, 190, 60, .45); color: #fff; box-shadow: 0 0 18px #ffbe3c; }
 .btn.cool { opacity: .45; }
-@keyframes pulse { 50% { transform: scale(1.07); } }
+@keyframes pulse { 50% { scale: 1.07; } }   /* the separate "scale" property, so it never overrides a button's position transform */
 
 .overlay { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 16px; text-align: center;
   background: linear-gradient(180deg, rgba(13,22,38,.25), rgba(13,22,38,.72)); overflow: auto; }
@@ -121,11 +121,11 @@ h2 { margin: 0; font-size: clamp(28px, 6vw, 52px); letter-spacing: 6px; }
 .btn.glass svg { width: 42%; height: 42%; max-width: 40px; fill: none; stroke: #fff; stroke-width: 2.1; stroke-linecap: round; stroke-linejoin: round;
   filter: drop-shadow(0 1px 2px rgba(0,20,60,.7)); position: relative; z-index: 1; }
 .btn.glass span { position: relative; z-index: 1; }
-.btn.glass.on, .btn.glass:active { transform: scale(.93); filter: brightness(1.35) saturate(1.3); background-color: rgba(255,255,255,.18); }
+.btn.glass.on, .btn.glass:active { scale: .93; filter: brightness(1.35) saturate(1.3); background-color: rgba(255,255,255,.18); }
 .btn.t-fire { --tint: rgba(255,140,40,.62); } .btn.t-fire svg { fill: rgba(255,255,255,.9); stroke: none; }
 .btn.t-breath { --tint: rgba(255,80,60,.55); } .btn.t-boost { --tint: rgba(60,200,255,.6); } .btn.t-lock { --tint: rgba(170,120,255,.6); }
 .btn.gold { --tint: rgba(255,200,60,.7); border-color: rgba(255,224,130,.9); color: #fff; } .btn.gold svg { fill: rgba(255,236,170,.95); stroke: none; }
-.btn.gold.ready { box-shadow: inset 0 1.5px 1px rgba(255,255,255,.9), 0 0 0 2px rgba(255,214,90,.9), 0 0 26px rgba(255,190,60,.95), 0 8px 22px rgba(4,18,60,.38); animation: pulse 1s infinite; }
+.btn.gold.ready { box-shadow: inset 0 1.5px 1px rgba(255,255,255,.9), 0 0 0 2px rgba(255,214,90,.9), 0 0 26px rgba(255,190,60,.95), 0 8px 22px rgba(4,18,60,.38); }
 .btn.cool { opacity: .42; filter: grayscale(.6); }
 .btn.big.glass { font-size: 13px; } .btn.big.glass svg { width: 38%; height: 38%; }
 .btn.tiny.glass { font-size: 12px; }
@@ -446,7 +446,7 @@ body.noblur .marker { filter: none; }
 /* ---------------------------------------------------------------- v1.10 control layout editor */
 #buttons.customized { left: 0 !important; top: 0 !important; right: 0 !important; bottom: 0 !important; width: auto !important; height: auto !important; transform: none !important; }
 #buttons.customized .btn.custompos, #pauseBtn.custompos { right: auto; bottom: auto; margin: 0; transform: translate(-50%, -50%) scale(var(--s, 1)); }
-#buttons.customized .btn.custompos.on, #pauseBtn.custompos.on { transform: translate(-50%, -50%) scale(calc(var(--s, 1) * .95)); }
+
 #stickBase.customrest { --sw: calc(140px * var(--ss, 1)); width: var(--sw); height: var(--sw);
   left: calc(var(--rx) * 100vw - var(--sw) / 2); top: calc(var(--ry) * 100vh - 18vh - var(--sw) / 2); bottom: auto; }
 #stickBase.customrest #stickKnob { width: calc(var(--sw) * .42); height: calc(var(--sw) * .42); margin: calc(var(--sw) * -.21); }
@@ -461,3 +461,11 @@ body.hudedit #hud { background: rgba(10,16,30,.35); }
 #hudEdit input[type=range] { width: 110px; accent-color: #ffc23c; }
 #hudEdit em { font-style: normal; width: 38px; opacity: .8; }
 #hudEdit .cta { min-width: 0; padding: 7px 18px; font-size: 13px; }
+
+/* v1.10.1: ad for double coins on the results card, upgrade hint on defeat */
+#resAd { margin: 10px auto 0; display: flex; align-items: center; gap: 6px; justify-content: center; font-size: 12px; padding: 8px 14px; }
+#resAd .vid, #adCoinsBtn .vid { width: 16px; height: 16px; fill: currentColor; }
+#downHint { max-width: 420px; margin: 2px auto 0; opacity: .8; }
+@media (max-height: 480px) { #resAd { margin-top: 6px; padding: 6px 12px; } }
+/* SURGE ready: no movement, it just lights up (bright gold glow) until it is used */
+.btn.gold.ready { animation: none; filter: brightness(1.25) saturate(1.2); }
