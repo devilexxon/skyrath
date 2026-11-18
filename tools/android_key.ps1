@@ -1,9 +1,10 @@
 # Google Play upload key helper. Shows a normal Windows password box (no hidden terminal prompt).
 #   powershell -ExecutionPolicy Bypass -File tools\android_key.ps1 create   -> make the upload key (once)
 #   powershell -ExecutionPolicy Bypass -File tools\android_key.ps1 sign     -> sign build\aab\unsigned.aab for Google Play
+#   powershell -ExecutionPolicy Bypass -File tools\android_key.ps1 export   -> upload_certificate.pem (for a Play upload key reset)
 # The password goes straight to keytool / jarsigner through a temporary environment variable of this process only;
 # it is never written to a file or shown on screen. The key lives OUTSIDE the project: D:\skyrath-keys\skyrath-upload.jks
-param([ValidateSet("create", "sign")] [string]$Mode = "create")
+param([ValidateSet("create", "sign", "export")] [string]$Mode = "create")
 $ErrorActionPreference = "Stop"
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
@@ -97,5 +98,21 @@ if ($Mode -eq "sign") {
         Show-Message "Signed and ready to upload to Google Play:`n$Out"
     } catch {
         Show-Message "Signing failed. If the password was wrong, run the sign step again." "Error"; exit 1
+    } finally { Remove-Item Env:SKYRATH_KEY_PW -ErrorAction SilentlyContinue }
+}
+
+if ($Mode -eq "export") {
+    if (-not (Test-Path $Key)) { Show-Message "No upload key found at:`n$Key" "Error"; exit 1 }
+    $Pem = Join-Path (Split-Path $Key) "upload_certificate.pem"
+    $pw = Ask-Password "Enter your upload key password to export its certificate (the public part, safe to give to Google)." $false
+    if ($null -eq $pw) { Write-Host "Cancelled."; exit 1 }
+    $env:SKYRATH_KEY_PW = $pw; $pw = $null
+    try {
+        & $Keytool -export -rfc -keystore $Key -alias upload -storepass:env SKYRATH_KEY_PW -file $Pem
+        if ($LASTEXITCODE -ne 0 -or -not (Test-Path $Pem)) { throw "export failed (wrong password?)" }
+        Write-Host "Certificate: $Pem"
+        Show-Message "Certificate saved:`n$Pem`n`nUpload this file in Play Console when you request the upload key reset."
+    } catch {
+        Show-Message "Export failed. If the password was wrong, run it again." "Error"; exit 1
     } finally { Remove-Item Env:SKYRATH_KEY_PW -ErrorAction SilentlyContinue }
 }
