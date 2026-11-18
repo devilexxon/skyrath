@@ -2,8 +2,7 @@
 // Usage: node tools/build_web.mjs [web|crazygames|android]
 //   web        -> dist/web/              + dist/release/Skyrath-v<ver>-PC-Web-itchio.zip   (itch.io, PC browsers)
 //   crazygames -> dist/web-crazygames/   + dist/release/Skyrath-v<ver>-CrazyGames.zip      (CrazyGames SDK v3 build)
-//   android    -> dist/web-android/      (packed into the APK by tools/build_apk.sh)
-//   windows    -> dist/web-windows/      (packed with Skyrath.exe by tools/build_windows.sh)
+//   android    -> dist/web-android/      (packed into the Google Play bundle by tools/build_android.sh)
 import { cpSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync, existsSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { join, resolve } from "node:path";
@@ -11,11 +10,11 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const TARGET = process.argv[2] || "web";
-if (!["web", "crazygames", "android", "windows"].includes(TARGET)) throw new Error("target must be web, crazygames or android");
+if (!["web", "crazygames", "android"].includes(TARGET)) throw new Error("target must be web, crazygames or android");
 const VER = (readFileSync(join(ROOT, "android", "version.properties"), "utf8").match(/versionName=(\S+)/) || [])[1] || "dev";
 const OUT = join(ROOT, "dist", TARGET === "web" ? "web" : `web-${TARGET}`);
 mkdirSync(join(ROOT, "dist", "release"), { recursive: true });
-const ZIP = TARGET === "android" || TARGET === "windows" ? null : join(ROOT, "dist", "release", TARGET === "web" ? `Skyrath-v${VER}-PC-Web-itchio.zip` : `Skyrath-v${VER}-CrazyGames.zip`);
+const ZIP = TARGET === "android" ? null : join(ROOT, "dist", "release", TARGET === "web" ? `Skyrath-v${VER}-PC-Web-itchio.zip` : `Skyrath-v${VER}-CrazyGames.zip`);
 const IDS = ["fire", "frost", "storm", "forest"];
 
 rmSync(OUT, { recursive: true, force: true });

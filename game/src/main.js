@@ -55,7 +55,6 @@ window.skyrathFlush = flushSave;
 document.addEventListener("visibilitychange", () => { if (document.hidden) flushSave(); });
 window.addEventListener("pagehide", flushSave);
 if (!save.gfxAuto) { save.gfx = "auto"; save.gfxAuto = true; }      // v1.5.1: everyone starts on Auto graphics once
-if (PLATFORM === "windows" && !save.gfxWin) { save.gfx = "high"; save.gfxWin = true; }   // the Windows app starts on High graphics
 const prog = createProgression(save, persist);
 const skins = skinState(save);
 // daily rewards, missions, achievements; toasts are small banners at the top of the screen

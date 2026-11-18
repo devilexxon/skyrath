@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
-# Build both Android packages with Gradle. Run from the project root in Git Bash:
-#   node tools/build_web.mjs android && bash tools/build_android.sh            -> sideload APK + signed Google Play bundle
-#   node tools/build_web.mjs android && bash tools/build_android.sh unsigned   -> same, but leave the Play bundle unsigned
-# Outputs:
-#   dist/release/Skyrath-v<ver>-Android.apk      hand-installed APK (app ID com.skyrath.game, throwaway key)
-#   dist/release/Skyrath-v<ver>-GooglePlay.aab   upload to Google Play (app ID com.devilexxon.skyrath)
+# Build the Google Play bundle with Gradle. Run from the project root in Git Bash:
+#   node tools/build_web.mjs android && bash tools/build_android.sh unsigned   -> build/aab/unsigned.aab
+#   then sign it: powershell -ExecutionPolicy Bypass -File tools\android_key.ps1 sign
+#   (or run without "unsigned" to sign here with jarsigner)
+# Output: dist/release/Skyrath-v<ver>-GooglePlay.aab, uploaded to Google Play (app ID com.devilexxon.skyrath)
 # The Play bundle is signed with your private upload key, kept OUTSIDE the project: D:\skyrath-keys\skyrath-upload.jks
 # (override with SKYRATH_UPLOAD_KEY=...). jarsigner asks for its password, so run this in a terminal.
 # Cloud save: put the Play Games project ID in android/gradle.properties (skyrath.gamesAppId=...).
@@ -26,13 +25,11 @@ APP="$ROOT/android/app"
 rm -rf "$APP/build/game-assets"; mkdir -p "$APP/build/game-assets"
 cp -r "$WEB" "$APP/build/game-assets/web"
 
-(cd "$ROOT/android" && ./gradlew --no-daemon -q assembleSideloadRelease bundlePlayRelease)
+(cd "$ROOT/android" && ./gradlew --no-daemon -q bundleRelease)
 
 mkdir -p "$ROOT/dist/release" "$ROOT/build/aab"
-cp "$APP/build/outputs/apk/sideload/release/app-sideload-release.apk" "$ROOT/dist/release/Skyrath-v$VER-Android.apk"
 UNSIGNED="$ROOT/build/aab/unsigned.aab"
-cp "$APP/build/outputs/bundle/playRelease/app-play-release.aab" "$UNSIGNED"
-echo "sideload APK: dist/release/Skyrath-v$VER-Android.apk"
+cp "$APP/build/outputs/bundle/release/app-release.aab" "$UNSIGNED"
 echo "Play bundle (unsigned): $UNSIGNED"
 
 if [ "${1:-}" = "unsigned" ]; then exit 0; fi

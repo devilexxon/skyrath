@@ -26,7 +26,7 @@ Made by **Sabbir Ahmed Shuvo** ([DevilExxon](https://devilexxon.itch.io/)), a CS
 - **Progression**: levels, upgrades, a shop, a 7-day login calendar, 3 daily missions, 12 achievements and personal bests
 - **Cloud save** on Android with Google Play Games: progress follows the player's Google account across reinstalls and phones
 - **Story intro** with voiced lines, music and sound effects
-- **Runs everywhere**: web (itch.io), CrazyGames (with their SDK), an Android APK and a Windows app, all from one codebase
+- **Runs everywhere**: Google Play (Android), CrazyGames (with their SDK) and the web (itch.io), all from one codebase
 
 ## Tech
 
@@ -35,7 +35,7 @@ Made by **Sabbir Ahmed Shuvo** ([DevilExxon](https://devilexxon.itch.io/)), a CS
 | Rendering | Three.js r170 (ES modules), toon materials, UnrealBloom post-processing, custom GLSL shaders (waterfalls, ice cracks, aurora, black-hole swirl, GPU snow) |
 | Code | Plain JavaScript (about 6,000 lines), no framework or bundler |
 | Audio | Web Audio API: decoded effect buffers, streamed music through gain nodes |
-| Platforms | CrazyGames SDK v3 (cloud saves, rewarded and midgame ads); Android WebView app built with the Android SDK build tools; Windows launcher in C# |
+| Platforms | CrazyGames SDK v3 (cloud saves, rewarded and midgame ads); Android app (Gradle, WebView + Google Play Games cloud save) for Google Play |
 | Tooling | Node.js build script, Python and Node scripts for model and texture work, ffmpeg |
 
 ## Challenges I solved
@@ -44,7 +44,7 @@ Made by **Sabbir Ahmed Shuvo** ([DevilExxon](https://devilexxon.itch.io/)), a CS
 - **Two songs playing at once on iPhone.** iOS ignores the `volume` property of `<audio>` elements, so music fade-outs never finished and old tracks kept playing. I moved all audio to the Web Audio API, which also fixed the volume sliders on iPhone.
 - **Lag on phones.** Sound effects used to restart a media player on every shot, which stalls iOS. They are now decoded once and played from buffers, with a cap on how many play at once. Graphics quality also lowers itself automatically when the frame rate drops.
 - **A new world without a bigger download.** The crystal world's terrain, ice and sky are generated procedurally with shaders, and enemies are recoloured instead of using new models, so the world adds only kilobytes.
-- **One codebase, four platforms.** The build script injects the target platform and copies only the assets the game loads. Models ship with shrunk textures, so the initial download is about 16 MB.
+- **One codebase, three stores.** The build script injects the target platform and copies only the assets the game loads. Models ship with shrunk textures, so the initial download is about 16 MB.
 - **Never losing progress.** On Android, the save is mirrored to the player's Google account through Google Play Games
   (Saved Games), via a small Java bridge into the game's web view. Each save carries a line ID and a revision number, so a
   fresh install restores the cloud copy, the newest copy wins on the same save line, and the player chooses only when two
@@ -80,12 +80,12 @@ Then open http://localhost:5173/. On Windows you can also double-click `Play Sky
 ```bash
 node tools/build_web.mjs web          # itch.io / any web host  -> dist/web
 node tools/build_web.mjs crazygames   # CrazyGames (adds their SDK) -> dist/web-crazygames
-node tools/build_web.mjs android      # then: bash tools/build_android.sh  (Gradle: sideload APK + Google Play bundle)
+node tools/build_web.mjs android      # then: bash tools/build_android.sh unsigned  (Gradle: Google Play bundle)
+                                      #   and sign it: powershell -ExecutionPolicy Bypass -File tools/android_key.ps1 sign
                                       #   needs JDK 17 and the Android SDK (platform 36); Gradle is downloaded by the wrapper
-node tools/build_web.mjs windows      # then: bash tools/build_windows.sh  (needs the .NET Framework C# compiler)
 ```
 
-The build scripts use ffmpeg to shrink images. The sideload APK build creates its own throwaway key on first run. The Google Play bundle is signed with a private upload key kept outside the project. Signing keys are never committed.
+The build scripts use ffmpeg to shrink images. The Google Play bundle is signed with a private upload key kept outside the project; signing keys are never committed.
 
 Privacy policy: [devilexxon.github.io/skyrath/privacy.html](https://devilexxon.github.io/skyrath/privacy.html)
 
@@ -106,7 +106,6 @@ assets/          optimized 3D models, audio, dragon card art and skins
 vendor/          Three.js
 tools/           build, dev-server and asset scripts
 android/         Android app (Gradle project: WebView + Google Play Games cloud save bridge)
-windows/         Windows launcher source
 docs/            screenshots for this README
 ```
 

@@ -2,7 +2,7 @@ plugins {
     id "com.android.application"
 }
 
-// one place for the version, shared with the web and Windows builds
+// one place for the version, shared with the web builds
 def ver = new Properties()
 file("../version.properties").withInputStream { ver.load(it) }
 def gamesAppId = (project.findProperty("skyrath.gamesAppId") ?: "").toString().trim()
@@ -12,6 +12,7 @@ android {
     compileSdk 36
 
     defaultConfig {
+        applicationId "com.devilexxon.skyrath"        // the Google Play app (cloud save through Google Play Games)
         minSdk 24
         targetSdk 36
         versionCode ver.getProperty("versionCode").trim().toInteger()
@@ -19,34 +20,9 @@ android {
         resValue "string", "game_services_project_id", gamesAppId
     }
 
-    signingConfigs {
-        // throwaway key for the hand-installed APK only (the Play bundle is signed afterwards with your private upload key)
-        sideload {
-            storeFile file("../skyrath-sideload.keystore")
-            storePassword "android"
-            keyAlias "skyrath"
-            keyPassword "android"
-        }
-    }
-
-    // play: the Google Play app (cloud save through Google Play Games)
-    // sideload: the APK you install by hand (keeps the old ID so existing installs update and keep their progress)
-    flavorDimensions "store"
-    productFlavors {
-        play {
-            dimension "store"
-            applicationId "com.devilexxon.skyrath"
-        }
-        sideload {
-            dimension "store"
-            applicationId "com.skyrath.game"
-            signingConfig signingConfigs.sideload
-        }
-    }
-
     buildTypes {
         release {
-            minifyEnabled false
+            minifyEnabled false    // the bundle is signed afterwards with your private upload key (tools/android_key.ps1 sign)
         }
     }
 
