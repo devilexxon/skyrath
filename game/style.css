@@ -411,3 +411,53 @@ body.noblur .marker { filter: none; }
   #bannerSub { font-size: 9px; letter-spacing: 2px; }
   #combo { top: 29%; left: 40%; font-size: 16px; }
 }
+
+/* ---------------------------------------------------------------- v1.10 stage results */
+#results { z-index: 24; background: radial-gradient(ellipse at center, rgba(10,16,30,.55), rgba(10,16,30,.85)); }
+.rescard { width: min(460px, 88vw); padding: 18px 20px 16px; border-radius: 18px; background: rgba(13,22,38,.82); border: 1px solid rgba(255,255,255,.22);
+  box-shadow: 0 12px 40px rgba(0,0,0,.45); text-align: center; animation: resIn .45s cubic-bezier(.2, 1.4, .4, 1); }
+@keyframes resIn { from { transform: scale(.85); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+#resKicker { display: block; font: 700 11px/1 "Trebuchet MS", sans-serif; letter-spacing: 3px; opacity: .75; }
+#resTitle { margin: 6px 0 4px; font: 800 28px/1.1 "Trebuchet MS", "Segoe UI", sans-serif; letter-spacing: 5px;
+  background: linear-gradient(180deg, #fff6d0, #ffc23c); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.stars { display: flex; justify-content: center; gap: 10px; margin: 4px 0 12px; }
+.stars i { display: block; width: 34px; height: 34px; background: rgba(255,255,255,.16); clip-path: polygon(50% 0, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%); }
+.stars.s1 i:nth-child(-n+1), .stars.s2 i:nth-child(-n+2), .stars.s3 i { background: linear-gradient(180deg, #fff1a8, #ffb21e); animation: starPop .5s ease-out backwards; }
+.stars i:nth-child(2) { animation-delay: .15s; transform: translateY(-6px) scale(1.15); } .stars i:nth-child(3) { animation-delay: .3s; }
+@keyframes starPop { from { transform: scale(0); } }
+.resgrid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+.resgrid div { padding: 8px 2px; border-radius: 10px; background: rgba(255,255,255,.07); }
+.resgrid b { display: block; font: 800 17px/1 "Trebuchet MS", sans-serif; color: #fff; }
+.resgrid span { display: block; margin-top: 4px; font: 600 10px/1 "Trebuchet MS", sans-serif; letter-spacing: 1px; opacity: .7; text-transform: uppercase; }
+#resBonus { margin: 10px 0 0; font: 700 12px/1.2 "Trebuchet MS", sans-serif; color: #ffd86a; letter-spacing: 1px; }
+#resBest { margin: 6px 0 0; font: 800 12px/1 "Trebuchet MS", sans-serif; letter-spacing: 3px; color: #7df0ff; }
+.resbtns { display: flex; gap: 10px; justify-content: center; margin-top: 14px; }
+.resbtns .cta { min-width: 0; flex: 1; max-width: 200px; padding: 11px 10px; font-size: 14px; }
+@media (max-height: 480px) {
+  .rescard { padding: 10px 14px 10px; }
+  #resTitle { font-size: 21px; margin: 3px 0 2px; }
+  .stars { margin: 2px 0 6px; } .stars i { width: 24px; height: 24px; }
+  .resgrid b { font-size: 14px; } .resgrid div { padding: 5px 2px; }
+  .resbtns { margin-top: 8px; } .resbtns .cta { padding: 8px 8px; font-size: 13px; }
+  #resBonus { margin-top: 6px; }
+}
+#continueBtn { margin-top: 6px; }
+
+/* ---------------------------------------------------------------- v1.10 control layout editor */
+#buttons.customized { left: 0 !important; top: 0 !important; right: 0 !important; bottom: 0 !important; width: auto !important; height: auto !important; transform: none !important; }
+#buttons.customized .btn.custompos, #pauseBtn.custompos { right: auto; bottom: auto; margin: 0; transform: translate(-50%, -50%) scale(var(--s, 1)); }
+#buttons.customized .btn.custompos.on, #pauseBtn.custompos.on { transform: translate(-50%, -50%) scale(calc(var(--s, 1) * .95)); }
+#stickBase.customrest { --sw: calc(140px * var(--ss, 1)); width: var(--sw); height: var(--sw);
+  left: calc(var(--rx) * 100vw - var(--sw) / 2); top: calc(var(--ry) * 100vh - 18vh - var(--sw) / 2); bottom: auto; }
+#stickBase.customrest #stickKnob { width: calc(var(--sw) * .42); height: calc(var(--sw) * .42); margin: calc(var(--sw) * -.21); }
+body.hudedit #hud * { pointer-events: none; }
+body.hudedit #stickBase, body.hudedit #buttons .btn, body.hudedit #pauseBtn { pointer-events: auto; cursor: grab; opacity: 1; }
+body.hudedit .hudsel { outline: 2px dashed #ffd23c; outline-offset: 4px; }
+body.hudedit #hud { background: rgba(10,16,30,.35); }
+#hudEdit { position: fixed; left: 50%; top: 10px; transform: translateX(-50%); z-index: 60; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px 14px;
+  width: min(720px, 94vw); padding: 8px 12px; border-radius: 14px; background: rgba(13,22,38,.9); border: 1px solid rgba(255,255,255,.25); font-size: 12px; }
+#hudEdit b { width: 100%; text-align: center; letter-spacing: 1px; font-size: 12px; }
+#hudEdit label { display: flex; align-items: center; gap: 6px; }
+#hudEdit input[type=range] { width: 110px; accent-color: #ffc23c; }
+#hudEdit em { font-style: normal; width: 38px; opacity: .8; }
+#hudEdit .cta { min-width: 0; padding: 7px 18px; font-size: 13px; }

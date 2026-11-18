@@ -115,6 +115,7 @@ function layoutControls() {
   if (!hud || hud.classList.contains("hidden")) return;
   // keep the normal layout wherever it already fits; only step in when SURGE would hit the bars or DODGE would leave the screen
   btns.style.transform = ""; btns.style.top = ""; btns.style.transformOrigin = "";
+  if (btns.classList.contains("customized")) return;          // the player arranged the controls themselves
   const H = window.innerHeight, PANEL = 320;
   const hudBottom = tr.getBoundingClientRect().bottom;
   let topB = 1e9, botB = 0;
@@ -149,8 +150,8 @@ function toonFor(src, foe, tex) {
   let m = matCache.get(key);
   if (!m) {
     m = new THREE.MeshToonMaterial({ map: tex || src.map, gradientMap: toonGrad });
-    if (foe && ice) { m.color.setRGB(0.62, 0.78, 0.96); m.emissive = new THREE.Color(0x3aa0ff); m.emissiveIntensity = 0.2; }
-    else if (foe) { m.color.setRGB(0.7, 0.62, 0.7); m.emissive = new THREE.Color(0xff1447); m.emissiveIntensity = 0.15; }
+    if (foe && ice) { m.color.setRGB(0.8, 0.9, 1.0); m.emissive = new THREE.Color(0x3aa0ff); m.emissiveIntensity = 0.1; }
+    else if (foe) { m.color.setRGB(0.88, 0.82, 0.88); m.emissive = new THREE.Color(0xff1447); m.emissiveIntensity = 0.07; }
     matCache.set(key, m);
   }
   return m;
@@ -338,7 +339,8 @@ function readInput() {
 // ---------------------------------------------------------------- state
 const G = {
   state: "loading", choice: "fire", stage: 0, time: 0, slow: 1, shake: 0, freeze: 0,
-  player: null, enemies: [], shots: [], pickups: [], spawnQueue: [], lock: null, target: null, lockCand: null, lockT: 0,
+  player: null, enemies: [], shots: [], pickups: [], spawnQueue: [], wave: 1, waves: 1, nextWaveT: 0,
+  stageRun: { t0: 0, coins: 0, gems: 0, kills: 0, combo: 0, taken0: 0 }, lock: null, target: null, lockCand: null, lockT: 0,
   nextStageT: 0, spawnT: 0, pendingBoss: false, revives: 0, bannerT: 0, menuDragon: null, menuAngle: 0,
   combo: 0, comboT: 0, streak: 0, streakT: 0,
   run: { start: 0, kills: 0, godKills: 0, maxCombo: 0, taken: 0, dmg: 0 },
@@ -500,7 +502,72 @@ function updateRift(dt) {
   return true;
 }
 
-function startRun() {
+// ---------------------------------------------------------------- stage results
+// After every stage: VICTORY, a 1-3 star rating, what you earned, then Next stage or Home (Home keeps your place).
+let resultsBoss = false;
+function stageStars(wasBoss) {
+  const p = G.player, sr = G.stageRun;
+  const taken = (G.run.taken - sr.taken0) / p.maxHp, secs = G.time - sr.t0;
+  const par = 30 + 28 * G.waves + (wasBoss ? 45 : 0);
+  if (taken < 0.2 && secs < par) return 3;
+  if (taken < 0.65 && secs < par * 1.7) return 2;
+  return 1;
+}
+function showResults(wasBoss) {
+  const p = G.player, sr = G.stageRun;
+  resultsBoss = wasBoss;
+  const stars = stageStars(wasBoss);
+  const bonus = stars * (8 + G.stage * 4);
+  save.coins += bonus;
+  if (stars === 3) meta.track("star3", 1);
+  const secs = Math.max(1, Math.round(G.time - sr.t0));
+  $("resKicker").textContent = wasBoss ? `STAGE ${G.stage}  ·  BOSS DEFEATED` : `STAGE ${G.stage} CLEAR`;
+  $("resTitle").textContent = wasBoss ? "VICTORY!" : stars === 3 ? "PERFECT!" : "VICTORY";
+  $("resStars").className = `stars s${stars}`;
+  $("resCoins").textContent = `+${sr.coins + bonus}`;
+  $("resGems").textContent = `+${sr.gems}`;
+  $("resKills").textContent = String(sr.kills);
+  $("resTime").textContent = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`;
+  $("resCombo").textContent = String(sr.combo);
+  $("resBonus").textContent = `${"★".repeat(stars)} bonus: +${bonus} coins`;
+  $("resBest").classList.toggle("hidden", !(G.stage >= save.best && G.bestAtStart > 0 && G.stage > G.bestAtStart));
+  $("resNext").textContent = wasBoss && G.stage % 10 === 0 ? "Enter the rift" : `Next: stage ${G.stage + 1}`;
+  G.state = "results"; G.clearing = false;
+  input.queue.length = 0; held.fire = held.breath = held.boost = false;
+  $("results").classList.remove("hidden");
+  audio.play("level_up", 0.7);
+  flushSave();
+}
+function resultsNext() {
+  if (G.state !== "results") return;
+  $("results").classList.add("hidden");
+  const p = G.player;
+  p.hp = Math.min(p.maxHp, p.hp + p.maxHp * 0.3);
+  G.state = "play";
+  if (resultsBoss && G.stage % 10 === 0) { G.rift = true; setTimeout(() => { if (G.state === "play" && G.player) openRift(); }, 700); }
+  else { pop("+30% HEALTH", "heal"); nextStage(1.6); }
+}
+// Home after a stage: remember where you are so the menu can offer "Continue"
+function resultsHome() {
+  if (G.state !== "results") return;
+  const p = G.player;
+  save.resume = {
+    stage: G.stage, boss: resultsBoss, dragon: G.choice, lv: p.lv, xp: p.xp, ult: p.ult,
+    hp: Math.min(1, (p.hp + p.maxHp * 0.3) / p.maxHp), revives: G.revives,
+    run: { kills: G.run.kills, godKills: G.run.godKills, maxCombo: G.run.maxCombo, taken: G.run.taken, dmg: G.run.dmg, secs: (performance.now() - G.run.start) / 1000 },
+  };
+  persistNow();
+  $("results").classList.add("hidden");
+  showMenu();
+}
+function refreshContinue() {
+  const r = save.resume, b = $("continueBtn");
+  b.classList.toggle("hidden", !r);
+  if (r) b.textContent = `Continue: stage ${r.stage + 1}`;
+}
+
+function startRun(resume) {
+  if (!resume && save.resume) { save.resume = null; persist(); }      // a new run replaces a saved one
   clearRun();
   switchWorld("kingdom"); portal.close(); G.rift = false; G.warp = null; $("warp").style.opacity = "0";
   if (G.menuDragon) { G.menuDragon.dispose(); G.menuDragon = null; }
@@ -516,6 +583,22 @@ function startRun() {
   audio.say("announcer", "get_ready", 0, true);
   gameplayStart(); G.adRevived = false;
   G.lock = G.lockCand = null; G.lockT = 0;
+  if (resume) {
+    // rebuild the run where it was left: run level (with its bonuses), health, surge and stage
+    for (let lv = 1; lv < resume.lv; lv++) { p.maxHp += 12; p.dmgMul *= 1.06; }
+    p.lv = resume.lv; p.xp = resume.xp; p.ult = resume.ult || 0;
+    const tier = p.lv >= 15 ? 3 : p.lv >= 10 ? 2 : p.lv >= 5 ? 1 : 0;
+    if (tier > p.tier) { p.tier = tier; p.fireEl = fireTier(p.el, p.id, tier); }
+    p.hp = Math.max(1, p.maxHp * resume.hp);
+    G.stage = resume.stage; G.revives = resume.revives || 0;
+    Object.assign(G.run, resume.run || {}); G.run.start = performance.now() - ((resume.run && resume.run.secs) || 0) * 1000;
+    const nextWorld = worldFor(G.stage + 1);
+    if (nextWorld !== "kingdom") {
+      switchWorld(nextWorld);
+      if (crystal) { p.pos.copy(crystal.spawn); p.yaw = 0; camera.position.copy(p.pos).add(tmp.set(0, 12, -40)); }
+    }
+    save.resume = null; persist();
+  }
   nextStage(2.2);
   if (!save.seenTips3) {                              // one-time quick tips for the manual controls
     save.seenTips3 = true; persist();
@@ -545,6 +628,8 @@ function nextStage(delay) {
   if (bossStage - G.stage <= 2 && loader) loadGod(godForStage(bossStage).def);
   world.setStage(G.stage);
   meta.stageStarted(G, G.player);
+  G.stageRun = { t0: G.time, coins: 0, gems: 0, kills: 0, combo: 0, taken0: G.run.taken };
+  G.clearing = false;
   if (G.stage > save.best) {
     save.best = G.stage; persist();
     if (G.bestAtStart > 0 && !G.newBestShown) { G.newBestShown = true; setTimeout(() => { if (G.state === "play") toast("NEW BEST!", `You reached stage ${G.stage}`); }, 2600); }
@@ -565,11 +650,11 @@ function spawnGod() {
   const x = p.pos.x + Math.cos(a) * 520, z = p.pos.z + Math.sin(a) * 520;
   god.root.position.set(x, clamp(p.pos.y + 60, groundAt(x, z) + 160, CEILING - 80), z);
   scene.add(god.root);
-  const hp = 60 * Math.pow(1.12, G.stage - 1) * 10 * (1 + tier * 0.25);
+  const hp = enemyHp() * 13 * (1 + tier * 0.25);
   G.enemies.push({
     dragon: god, godDef: def, id: def.id, el: ELEMENTS.foe, pos: god.root.position, vel: new THREE.Vector3(), hp, maxHp: hp, boss: true, phase: 1, ringT: 99,
     radius: def.size * 0.3, fireT: 99, orbit: Math.random() < 0.5 ? 1 : -1, alt: 70, state: "alive", dieT: 0,
-    speed: 46 + Math.min(30, G.stage), yaw: 0, pitch: 0, name: def.name,
+    speed: 46 + Math.min(30, G.stage), yaw: 0, pitch: 0, name: def.name, atkK: G.stage >= 15 ? 1.25 : 1,
     dmg: 9 * (1 + 0.07 * (G.stage - 1)) * (1 + tier * 0.2), shotSpeed: 120 + Math.min(70, G.stage * 2.5),
     born: performance.now(), core: { open: false, t: 6 },
   });
@@ -585,17 +670,17 @@ function spawnEnemy(boss, swarm) {
   const p = G.player;
   const pool = IDS.filter((i) => i !== p.id);
   const id = pool[Math.floor(Math.random() * pool.length)];
-  const scale = SCALE * (boss ? 2.6 : swarm ? 0.5 : rand(0.9, 1.1));
+  const scale = SCALE * (boss ? 2.6 : swarm ? 0.5 : rand(1.05, 1.22));       // regular foes are about 15% bigger than before
   const dragon = new Dragon(id, scale, true);
-  const a = swarm ? swarm.a + rand(-0.12, 0.12) : rand(0, Math.PI * 2), r = swarm ? rand(420, 480) : rand(360, 470);
+  const a = swarm ? swarm.a + rand(-0.12, 0.12) : rand(0, Math.PI * 2), r = swarm ? rand(420, 480) : rand(300, 380);
   const x = p.pos.x + Math.cos(a) * r, z = p.pos.z + Math.sin(a) * r;
   const y = clamp(p.pos.y + rand(-40, 40), groundAt(x, z) + 90, CEILING - 60);
   dragon.root.position.set(x, y, z);
   scene.add(dragon.root);
-  const hp = 60 * Math.pow(1.12, G.stage - 1) * (boss ? 8 : swarm ? 0.25 : 1);
+  const hp = enemyHp() * (boss ? 8 : swarm ? 0.25 : 1);
   G.enemies.push({
     dragon, id, el: ELEMENTS.foe, pos: dragon.root.position, vel: new THREE.Vector3(), hp, maxHp: hp, boss, phase: 1, ringT: 3,
-    radius: boss ? 40 : 15, fireT: rand(1.5, 3), orbit: Math.random() < 0.5 ? 1 : -1, alt: rand(-25, 15), state: "alive", dieT: 0,
+    radius: boss ? 40 : swarm ? 15 : 17, fireT: rand(1.5, 3), orbit: Math.random() < 0.5 ? 1 : -1, alt: rand(-25, 15), state: "alive", dieT: 0,
     speed: (56 + Math.min(44, G.stage * 2.2)) * (boss ? 0.8 : swarm ? 1.25 : 1), yaw: 0, pitch: 0, name: boss ? "THE DREAD WYRM" : swarm ? "WISP DRAKE" : DRAGONS[id].name,
   });
   const e = G.enemies[G.enemies.length - 1];
@@ -650,7 +735,7 @@ function makeType(e, type) {
   if (type === "sniper") { e.snipeT = rand(3, 5); e.fireT = 1e9; const eye = auraSprite(0xc070ff, 18); eye.position.z = 10; e.dragon.root.add(eye); }
   if (type === "mender") { e.healT = 1; e.dragon.root.add(auraSprite(0x5dff8a, 60)); }
   // elites: from stage 6, more often in the ice world
-  if (G.stage >= 6 && Math.random() < (world.theme === "crystal" ? 0.2 : 0.12)) {
+  if (G.stage >= 6 && Math.random() < Math.min(0.35, 0.05 + 0.012 * G.stage + (world.theme === "crystal" ? 0.06 : 0))) {
     e.elite = true; e.name = "ELITE " + e.name; e.hp *= 2.2; e.maxHp = e.hp; e.dmgK = 1.3;
     e.dragon.model.scale.multiplyScalar(1.15); e.radius *= 1.15;
     e.dragon.root.add(auraSprite(0xffc23c, 80));
@@ -722,17 +807,21 @@ function typeBehaviour(e, dt, p, dist, dmg) {
 
 // dragons are built one per frame (building one is heavy), so a new wave never makes the game stutter
 const spawnLater = (fn) => G.spawnQueue.push(fn);
-function spawnWave() {
-  const n = G.pendingBoss ? 2 : Math.min(2 + Math.floor((G.stage - 1) / 2), 7);
-  if (G.pendingBoss) spawnEnemy(true);
-  for (let i = 0; i < n; i++) spawnLater(() => spawnEnemy(false));
-  // from stage 2: a pack of small, fast, weak wisp drakes flying together, for satisfying multi-kills
-  if (G.stage >= 2 && !G.pendingBoss) {
+// fewer dragons, but tougher: never more than 4 at once; later stages send them in waves instead of a crowd
+const enemyHp = () => 70 * Math.pow(1.15, G.stage - 1);
+const waveSize = (stage) => Math.min(1 + Math.floor(stage / 3), 4);
+const wavesFor = (stage) => (stage >= 16 ? 3 : stage >= 8 ? 2 : 1);
+function spawnWave(next) {
+  if (!next) { G.wave = 1; G.waves = G.pendingBoss ? 1 : wavesFor(G.stage); }
+  if (G.pendingBoss) {
+    spawnEnemy(true);
+    if (G.stage >= 10) spawnLater(() => spawnEnemy(false));            // one escort from stage 10
     const pack = { a: rand(0, Math.PI * 2), orbit: Math.random() < 0.5 ? 1 : -1 };
-    const k = QUAL.light ? 2 : G.stage >= 6 ? 4 : 3;
-    for (let i = 0; i < k; i++) spawnLater(() => spawnEnemy(false, pack));
+    for (let i = 0; i < 2; i++) spawnLater(() => spawnEnemy(false, pack));   // two small wisps around the god
+  } else {
+    for (let i = 0; i < waveSize(G.stage); i++) spawnLater(() => spawnEnemy(false));
   }
-  if (G.stage === 1) audio.say("announcer", "fight", 0, true);
+  if (G.stage === 1 && !next) audio.say("announcer", "fight", 0, true);
 }
 
 const shotMats = new Map();
@@ -765,6 +854,7 @@ function damagePlayer(dmg) {
 function killPlayer() {
   const p = G.player;
   p.hp = 0; p.dead = true; G.state = "down";
+  if (save.resume) save.resume = null;
   gameplayStop();
   p.dragon.once("death", 1, 0.1, true);
   audio.play("enemy_death", 1);
@@ -835,7 +925,7 @@ function hurtEnemy(e, dmg, at, kind) {
   e.hp -= dmg;
   G.lastHitKind = kind;
   p.ult = Math.min(100, p.ult + (kind === "breath" ? 1.2 : e.boss ? 3 : 5));
-  G.combo++; G.comboT = 1.8;
+  G.combo++; G.comboT = 1.8; G.stageRun.combo = Math.max(G.stageRun.combo, G.combo);
   G.run.dmg += dmg; G.run.maxCombo = Math.max(G.run.maxCombo, G.combo);
   hitMark(e.hp <= 0, kind === "weak" || kind === "crit");
   // floating damage numbers (breath ticks are added up so they don't spam)
@@ -869,7 +959,7 @@ function killEnemy(e, rammed) {
   G.freeze = e.boss ? 0.22 : 0.07;
   p.ult = Math.min(100, p.ult + (e.boss ? 40 : 14));
   G.streak = G.streakT > 0 ? G.streak + 1 : 1; G.streakT = 4;
-  G.run.kills++;
+  G.run.kills++; G.stageRun.kills++;
   if (e.godDef) { happytime(); G.lastGod = e.godDef.name.split(",")[0]; G.run.godKills++; const secs = Math.round((performance.now() - e.born) / 1000); setTimeout(() => pop(`DEFEATED IN ${secs}s`, "level"), 900); }
   pop(e.godDef ? "GOD SLAIN!" : e.boss ? "WYRM SLAIN!" : ["DOWN!", "DOUBLE DOWN!", "TRIPLE DOWN!", "RAMPAGE!"][Math.min(3, G.streak - 1)], "down", e.pos, e.name);
   const coins = e.swarm ? 1 : (e.boss ? 60 : 6) + G.stage;
@@ -1288,10 +1378,11 @@ function updateEnemies(dt) {
       continue;
     }
     tmp2.crossVectors(UP, tmp).multiplyScalar(e.orbit);
-    const baseDmg = 8 * (1 + 0.07 * (G.stage - 1)) * (e.dmgK || 1);
+    const baseDmg = 8 * (1 + 0.09 * (G.stage - 1)) * (e.dmgK || 1);
     if (e.type && typeBehaviour(e, edt, p, dist, baseDmg)) { if (e.state === "alive") { e.dragon.root.rotation.set(0, Math.atan2(e.vel.x, e.vel.z), 0); e.dragon.update(edt, false, false); } continue; }
-    const far0 = e.type === "sniper" ? 640 : e.type === "mender" ? 480 : 0;
-    const near = e.godDef ? 360 : e.boss ? 180 : far0 ? far0 - 180 : 120, far = e.godDef ? 560 : e.boss ? 340 : far0 || 270;
+    // regular foes fight up close now (they used to circle 120-270 m away and looked tiny)
+    const far0 = e.type === "sniper" ? 480 : e.type === "mender" ? 380 : 0;
+    const near = e.godDef ? 360 : e.boss ? 180 : far0 ? far0 - 160 : 70, far = e.godDef ? 560 : e.boss ? 340 : far0 || 170;
     if (dist > far) tmp3.copy(tmp).addScaledVector(tmp2, 0.25);
     else if (dist < near) tmp3.copy(tmp).multiplyScalar(-0.9).addScaledVector(tmp2, 0.8);
     else tmp3.copy(tmp2).addScaledVector(tmp, 0.15);
@@ -1316,7 +1407,7 @@ function updateEnemies(dt) {
     const dmg = baseDmg * (e.boss ? 1.6 : e.swarm ? 0.5 : 1);
     e.fireT -= edt;
     if (e.fireT <= 0 && dist < 480 && !p.dead) {
-      const interval = Math.max(0.9, 2.5 - 0.08 * G.stage) * (e.boss ? (e.phase === 2 ? 0.5 : 0.75) : 1);
+      const interval = Math.max(0.7, 2.4 - 0.08 * G.stage) * (e.boss ? (e.phase === 2 ? 0.5 : 0.75) : 1);
       e.fireT = interval * rand(0.7, 1.3);
       e.dragon.mouth(tmp);
       tmp2.copy(p.pos).addScaledVector(p.fwd, p.speed * (dist / speed) * 0.75).sub(tmp).normalize();
@@ -1446,8 +1537,8 @@ function updatePickups(dt) {
     c.pos.addScaledVector(c.vel, dt);
     if (c.t > 0.45 && c.pos.distanceToSquared(p.pos) < 170) {
       if (c.kind === "heal") { const h = p.maxHp * c.value * p.up.orbHeal; p.hp = Math.min(p.maxHp, p.hp + h); pop(`+${Math.round(h)} HP`, "heal", p.pos); audio.play("gem_pickup", 0.6, 1.3); }
-      else if (c.kind === "coin") { save.coins += c.value; audio.play("coin_pickup", 0.5, rand(0.95, 1.2)); meta.track("coins", c.value); }
-      else { save.gems += c.value; audio.play("gem_pickup", 0.8); }
+      else if (c.kind === "coin") { save.coins += c.value; G.stageRun.coins += c.value; audio.play("coin_pickup", 0.5, rand(0.95, 1.2)); meta.track("coins", c.value); }
+      else { save.gems += c.value; G.stageRun.gems += c.value; audio.play("gem_pickup", 0.8); }
       persist();
       c.s.removeFromParent(); c.s.material.dispose(); G.pickups.splice(i, 1);
     }
@@ -1467,17 +1558,23 @@ function updateStage(dt) {
     return;
   }
   if (G.spawnQueue.length) { G.spawnQueue.shift()(); return; }
+  if (G.nextWaveT > 0) { G.nextWaveT -= dt; if (G.nextWaveT <= 0) spawnWave(true); return; }
   if (G.nextStageT > 0) { G.nextStageT -= dt; if (G.nextStageT <= 0) nextStage(1.6); return; }
+  if (G.clearing) return;
   if (!G.enemies.some((e) => e.state === "alive") && G.state === "play") {
+    if (G.wave < G.waves) {                      // next wave of this stage
+      G.wave++; G.nextWaveT = 2.4;
+      banner(`WAVE ${G.wave} OF ${G.waves}`, "MORE DRAGONS INCOMING", 2);
+      audio.say("announcer", "next_wave", 0);
+      return;
+    }
     const p = G.player;
     const wasBoss = G.pendingBoss;
-    p.hp = Math.min(p.maxHp, p.hp + p.maxHp * 0.3);
-    G.nextStageT = wasBoss ? 4.5 : 3;
+    G.clearing = true;
     meta.stageCleared(G, p);
-    if (wasBoss && G.stage % 10 === 0) { G.nextStageT = 0; setTimeout(() => { if (G.state === "play" && G.player) openRift(); }, 3200); G.rift = true; }
     $("bossbar").classList.add("hidden");
-    if (wasBoss) { banner("VICTORY", G.lastGod ? `${G.lastGod} FALLS` : "THE DREAD WYRM FALLS", 3.5); audio.say("announcer", "victory", 0, true); p.dragon.once("roar"); audio.play("dragon_roar", 0.8); setTimeout(() => audio.say(p.voice, "win", 0), 1800); }
-    else banner("STAGE CLEAR", "+30% HEALTH", 2.2);
+    if (wasBoss) { audio.say("announcer", "victory", 0, true); p.dragon.once("roar"); audio.play("dragon_roar", 0.8); setTimeout(() => audio.say(p.voice, "win", 0), 1800); }
+    setTimeout(() => { if (G.state === "play" && G.player && G.clearing) showResults(wasBoss); }, 1300);   // let the last kill play out first
   }
 }
 
@@ -1567,14 +1664,14 @@ function updateHud() {
   for (const e of alive) {
     if (e.boss || e === G.target) continue;
     const d = e.pos.distanceTo(p.pos);
-    if (d > 500) continue;
+    if (d > 300) continue;
     tmp.copy(e.pos); tmp.y += e.radius * 1.6 + 6; tmp.project(camera);
     if (tmp.z > 1 || Math.abs(tmp.x) > 0.95 || Math.abs(tmp.y) > 0.95) continue;
     let el = platePool[np];
     if (!el) { el = document.createElement("div"); el.className = "plate"; el.innerHTML = "<span></span><i><b></b></i>"; plates.appendChild(el); platePool.push(el); }
     setSt(el, "display", "block");
     setSt(el, "left", `${Math.round((tmp.x * 0.5 + 0.5) * w)}px`); setSt(el, "top", `${Math.round((-tmp.y * 0.5 + 0.5) * h)}px`);
-    setSt(el, "opacity", d > 380 ? ((500 - d) / 120).toFixed(2) : "1");
+    setSt(el, "opacity", d > 220 ? ((300 - d) / 80).toFixed(2) : "1");
     if (el.dataset.n !== e.name) { el.firstChild.textContent = e.name; el.dataset.n = e.name; }
     setSt(el.lastChild.firstChild, "transform", `scaleX(${clamp(e.hp / e.maxHp, 0, 1).toFixed(3)})`);
     np++;
@@ -1715,6 +1812,7 @@ function showMenu() {
   clearRun();
   switchWorld("kingdom"); portal.close(); G.rift = false; G.warp = null; $("warp").style.opacity = "0";
   G.state = "menu";
+  $("results").classList.add("hidden"); refreshContinue();
   world.setStage(1);
   $("hud").classList.add("hidden"); $("down").classList.add("hidden"); $("paused").classList.add("hidden"); $("begin").classList.add("hidden"); $("story").classList.add("hidden"); $("menu").classList.remove("hidden");
   refreshShop();
@@ -1761,6 +1859,15 @@ $("startBtn").addEventListener("click", () => {
   goFullscreen(); startRun();
 });
 $("fsBtn").addEventListener("click", goFullscreen);
+$("continueBtn").addEventListener("click", () => {
+  audio.unlock(); audio.play("ui_tap", 1);
+  const r = save.resume;
+  if (!r) return;
+  if (r.dragon && (IDS.includes(r.dragon) || skins.owns(r.dragon))) choose(r.dragon, false);
+  goFullscreen(); startRun(r);
+});
+$("resNext").addEventListener("click", () => { audio.unlock(); audio.play("ui_tap", 1); resultsNext(); });
+$("resHome").addEventListener("click", () => { audio.unlock(); audio.play("ui_tap", 1); resultsHome(); });
 // ---------------------------------------------------------------- upgrades and shop
 const fmt = (n) => n >= 10000 ? (n / 1000).toFixed(n >= 100000 ? 0 : 1) + "k" : String(n);
 function refreshShop() {
@@ -1943,6 +2050,7 @@ function autoQuality(real) {
 function applySettings() {
   audio.setLevel("music", SET.music / 100); audio.setLevel("sfx", SET.sfx / 100); audio.setLevel("voice", SET.voice / 100);
   applyQuality();
+  if (SET.hud) setTimeout(() => applyHudLayout(), 0);        // the layout editor code is defined further down
 }
 function refreshSettings() {
   for (const [id, key] of [["volMusic", "music"], ["volSfx", "sfx"], ["volVoice", "voice"]]) { $(id).value = SET[key]; $(id + "V").textContent = SET[key]; }
@@ -1989,7 +2097,7 @@ function frame() {
   if (BOT) setTimeout(frame, 16); else requestAnimationFrame(frame);
   // frame cap: 60 (or 30) while playing, 30 in menus, nearly nothing while paused or during an ad.
   // 90/120 Hz phones used to render twice as many frames as needed, which is what made them hot.
-  const cap = G.adPause || G.state === "paused" ? 2 : (G.state === "play" || G.state === "story") ? playCap() : 30;
+  const cap = G.adPause || G.state === "paused" || G.state === "results" ? 2 : (G.state === "play" || G.state === "story") ? playCap() : 30;
   G.capFps = cap;
   const now = performance.now(), interval = 1000 / cap, since = now - lastFrame;
   if (since < interval - 2) return;
@@ -2000,7 +2108,7 @@ function frame() {
   if (G.bannerT > 0) { G.bannerT -= raw; if (G.bannerT <= 0) $("banner").classList.remove("show"); }
   if (G.freeze > 0) G.freeze -= raw;
   const dt = G.freeze > 0 ? raw * 0.06 : raw;       // hit-stop: the world nearly freezes for a few frames on a kill
-  if (G.adPause || G.state === "paused") { renderer.render(scene, camera); return; }   // ad or pause: just keep the picture
+  if (G.adPause || G.state === "paused" || G.state === "results") { renderer.render(scene, camera); return; }   // ad or pause: just keep the picture
 
   if (G.state === "play" || G.state === "down") {
     readInput();
@@ -2053,6 +2161,98 @@ function loadModel(key, file, store) {
 }
 function loadLegend(id) { return loadModel(id, id, models).then((g) => { if (g && G.choice === id && G.state === "menu") choose(id, false); return g; }); }
 function loadGod(def) { return loadModel(def.id, def.file, godModels); }
+
+// ---------------------------------------------------------------- control layout editor (Settings -> Edit layout)
+// Every control can be dragged anywhere and resized; one opacity for all of them. Saved as screen fractions in
+// SET.hud = { op, items: { id: { x, y, s } } }, so the layout fits any screen. Reset brings back the default layout.
+const HUD_IDS = ["stick", "bFire", "bBreath", "bBoost", "bDodge", "bUlt", "pauseBtn"];
+const hudEl = (id) => (id === "stick" ? $("stickBase") : $(id));
+const hudEdit = { on: false, sel: "bFire", drag: null, back: null };
+function applyHudLayout() {
+  const L = SET.hud || {}, items = L.items || {};
+  const custom = Object.keys(items).length > 0;
+  $("buttons").classList.toggle("customized", custom);
+  for (const id of HUD_IDS) {
+    const e = hudEl(id), it = custom ? items[id] : null;
+    if (id === "stick") {
+      e.classList.toggle("customrest", !!it);
+      if (it) { e.style.setProperty("--rx", String(it.x)); e.style.setProperty("--ry", String(it.y)); e.style.setProperty("--ss", String(it.s)); }
+    } else {
+      e.classList.toggle("custompos", !!it);
+      if (it) { e.style.left = `${(it.x * 100).toFixed(2)}%`; e.style.top = `${(it.y * 100).toFixed(2)}%`; e.style.setProperty("--s", String(it.s)); }
+      else { e.style.left = e.style.top = ""; e.style.removeProperty("--s"); }
+    }
+  }
+  const op = L.op && L.op < 1 ? String(L.op) : "";
+  for (const id of ["buttons", "stickZone", "pauseBtn"]) $(id).style.opacity = op;
+  if (!custom) layoutControls();
+}
+function hudSelect(id) {
+  hudEdit.sel = id;
+  for (const x of HUD_IDS) hudEl(x).classList.toggle("hudsel", x === id);
+  const it = SET.hud.items[id];
+  $("hudSize").value = Math.round((it ? it.s : 1) * 100); $("hudSizeV").textContent = `${$("hudSize").value}%`;
+}
+function enterHudEdit() {
+  hudEdit.on = true;
+  hudEdit.back = { hudHidden: $("hud").classList.contains("hidden"), paused: !$("paused").classList.contains("hidden") };
+  $("settings").classList.add("hidden"); $("paused").classList.add("hidden");
+  $("hud").classList.remove("hidden");
+  document.body.classList.add("hudedit");
+  SET.hud = SET.hud || { op: 1, items: {} };
+  SET.hud.items = SET.hud.items || {};
+  if (!Object.keys(SET.hud.items).length) {
+    // start from the current default layout: measure where every control is right now
+    layoutControls();
+    for (const id of HUD_IDS) {
+      const e = hudEl(id), r = e.getBoundingClientRect();
+      SET.hud.items[id] = { x: (r.left + r.width / 2) / innerWidth, y: (r.top + r.height / 2) / innerHeight, s: +(r.width / (e.offsetWidth || r.width || 1)).toFixed(2) };
+    }
+  }
+  applyHudLayout();
+  $("hudOp").value = Math.round((SET.hud.op || 1) * 100); $("hudOpV").textContent = `${$("hudOp").value}%`;
+  $("hudEdit").classList.remove("hidden");
+  hudSelect(hudEdit.sel);
+}
+function exitHudEdit() {
+  hudEdit.on = false; hudEdit.drag = null;
+  document.body.classList.remove("hudedit");
+  for (const x of HUD_IDS) hudEl(x).classList.remove("hudsel");
+  $("hudEdit").classList.add("hidden");
+  if (hudEdit.back) {
+    if (hudEdit.back.hudHidden) $("hud").classList.add("hidden");
+    if (hudEdit.back.paused) $("paused").classList.remove("hidden");
+  }
+  persist();
+  refreshSettings(); $("settings").classList.remove("hidden");
+}
+// while editing, touches on the controls move them instead of pressing them
+window.addEventListener("pointerdown", (e) => {
+  if (!hudEdit.on || e.target.closest("#hudEdit")) return;
+  const hit = e.target.closest("#stickBase, #buttons .btn, #pauseBtn");
+  e.preventDefault(); e.stopPropagation();
+  if (!hit) return;
+  const id = hit.id === "stickBase" ? "stick" : hit.id;
+  hudSelect(id);
+  hudEdit.drag = { id, pid: e.pointerId };
+}, true);
+window.addEventListener("pointermove", (e) => {
+  const d = hudEdit.drag;
+  if (!hudEdit.on || !d || e.pointerId !== d.pid) return;
+  const it = SET.hud.items[d.id];
+  it.x = clamp(e.clientX / innerWidth, 0.04, 0.96); it.y = clamp(e.clientY / innerHeight, 0.06, 0.95);
+  if (d.id === "stick") { it.x = Math.min(it.x, 0.4); it.y = Math.max(it.y, 0.3); }   // the stick stays inside the left touch area
+  applyHudLayout();
+}, true);
+window.addEventListener("pointerup", (e) => { if (hudEdit.drag && e.pointerId === hudEdit.drag.pid) hudEdit.drag = null; }, true);
+$("hudEditBtn").addEventListener("click", () => { audio.unlock(); audio.play("ui_tap", 1); enterHudEdit(); });
+$("hudDone").addEventListener("click", exitHudEdit);
+$("hudReset").addEventListener("click", () => { SET.hud = { op: 1, items: {} }; applyHudLayout(); enterHudEdit(); });
+$("hudSize").addEventListener("input", () => {
+  const it = SET.hud.items[hudEdit.sel]; if (!it) return;
+  it.s = Number($("hudSize").value) / 100; $("hudSizeV").textContent = `${$("hudSize").value}%`; applyHudLayout();
+});
+$("hudOp").addEventListener("input", () => { SET.hud.op = Number($("hudOp").value) / 100; $("hudOpV").textContent = `${$("hudOp").value}%`; applyHudLayout(); });
 
 // ---------------------------------------------------------------- cloud save (Android app: Google Play Games)
 function restoreCloud(remote) {
@@ -2120,6 +2320,7 @@ async function boot() {
   $("loading").classList.add("hidden");
   loadingStop();
   $("startBtn").disabled = false; $("startBtn").textContent = "FLY";
+  refreshContinue();
   story = createStory({
     scene, camera, world, fx, audio, heightAt, VILLAGES, CASTLE,
     makeDragon: (id, scale, foe) => new Dragon(id, scale, foe),

@@ -169,7 +169,7 @@ export function godAttack(e, dt, ctx) {
   const rage = e.phase === 2 ? 1.45 : 1;
   const T = new THREE.Vector3(), D = new THREE.Vector3(), H = new THREE.Vector3();
   e.dragon.heartWorld(H);
-  A.t -= dt * rage;
+  A.t -= dt * rage * (e.atkK || 1);
 
   if (e.godDef.id === "leviathan") {
     // spiralling stream of tide orbs, and a ring wave in phase two

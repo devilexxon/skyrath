@@ -14,7 +14,7 @@ const MISSION_POOL = [
   { id: "coins300", text: "Collect 300 coins", stat: "coins", goal: 300, reward: { gems: 2 } },
   { id: "dodge20", text: "Dodge 20 times", stat: "dodge", goal: 20, reward: { coins: 120 } },
   { id: "blast5", text: "Defeat 5 enemies with a charged blast", stat: "blastKill", goal: 5, reward: { gems: 3 } },
-  { id: "wisp15", text: "Destroy 15 wisp drakes", stat: "wispKill", goal: 15, reward: { coins: 150 } },
+  { id: "stars3", text: "Clear 3 stages with 3 stars", stat: "star3", goal: 3, reward: { coins: 180 } },
   { id: "elite3", text: "Defeat 3 elite enemies", stat: "eliteKill", goal: 3, reward: { gems: 4 } },
   { id: "shield8", text: "Defeat 8 shield drakes", stat: "shieldKill", goal: 8, reward: { coins: 180 } },
   { id: "clean2", text: "Clear 2 stages without taking damage", stat: "cleanStage", goal: 2, reward: { gems: 4 } },
@@ -59,7 +59,13 @@ export function createMeta(save, persist, hooks) {
       save.missions = { date: d, list: seededPick(d, 3).map((m) => ({ id: m.id, prog: 0, claimed: false })) };
       persist();
     }
-    return save.missions.list.map((x) => ({ ...MISSION_POOL.find((m) => m.id === x.id), state: x }));
+    // a mission that no longer exists (removed in an update) is swapped for another one
+    for (const x of save.missions.list) {
+      if (MISSION_POOL.some((m) => m.id === x.id)) continue;
+      const repl = MISSION_POOL.find((m) => !save.missions.list.some((y) => y.id === m.id));
+      if (repl) { x.id = repl.id; x.prog = 0; x.claimed = false; }
+    }
+    return save.missions.list.filter((x) => MISSION_POOL.some((m) => m.id === x.id)).map((x) => ({ ...MISSION_POOL.find((m) => m.id === x.id), state: x }));
   }
 
   function give(r) { save.coins += r.coins || 0; save.gems += r.gems || 0; }
