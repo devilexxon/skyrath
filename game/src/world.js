@@ -154,8 +154,10 @@ function addShape(sh, minX, maxX, minZ, maxZ) {
       a.push(sh);
     }
 }
-export function addCyl(x, z, y0, y1, r, kind) { addShape({ t: 0, x, z, y0, y1, r, kind }, x - r, x + r, z - r, z + r); }
-export function addSph(x, y, z, r, kind) { addShape({ t: 1, x, y, z, r, kind }, x - r, x + r, z - r, z + r); }
+export function addCyl(x, z, y0, y1, r, kind) { const sh = { t: 0, x, z, y0, y1, r, kind }; addShape(sh, x - r, x + r, z - r, z + r); return sh; }
+export function addSph(x, y, z, r, kind) { const sh = { t: 1, x, y, z, r, kind }; addShape(sh, x - r, x + r, z - r, z + r); return sh; }
+// how many trees of each kind are drawn (lower graphics draw fewer); trees that are not drawn are not solid either
+const TREE_VIS = [1e9, 1e9];
 export function addBox(x, y, z, hx, hy, hz, ry, kind) {
   const e = Math.hypot(hx, hz);
   addShape({ t: 2, x, y, z, hx, hy, hz, c: Math.cos(ry), s: Math.sin(ry), kind }, x - e, x + e, z - e, z + e);
@@ -206,6 +208,7 @@ const _res = { x: 0, y: 0, z: 0, kind: "" };
 export function collide(px, py, pz, rad) {
   let found = false; _res.x = _res.y = _res.z = 0;
   const visit = (sh, dy) => {
+    if (sh.tm !== undefined && sh.ti >= TREE_VIS[sh.tm]) return;      // a tree hidden by the graphics setting
     const pen = hitShape(sh, px + _res.x, py + _res.y, pz + _res.z, rad, dy);
     if (pen > 0) { _res.x += _o.x * pen; _res.y += _o.y * pen; _res.z += _o.z * pen; if (!found) _res.kind = sh.kind; found = true; }
   };
@@ -257,12 +260,14 @@ function buildTrees(low) {
     // conifers up high, broadleaf trees in the lowlands, mixed in between
     if (rand() < sstep(140, 40, y) * 0.75) {
       broad.setMatrixAt(nb, m); trunks.setMatrixAt(nb, m);
-      addSph(x, y - 2 + 21 * s.y, z, 9.5 * k, "tree"); addCyl(x, z, y - 3, y - 2 + 12 * s.y, 2.2 * k, "tree");
+      const a1 = addSph(x, y - 2 + 21 * s.y, z, 9.5 * k, "tree"), a2 = addCyl(x, z, y - 3, y - 2 + 12 * s.y, 2.2 * k, "tree");
+      a1.tm = a2.tm = 1; a1.ti = a2.ti = nb;
       broad.setColorAt(nb, c.setHSL(0.2 + rand() * 0.08, 0.32 + rand() * 0.15, 0.24 + rand() * 0.1));
       nb++;
     } else {
       inst.setMatrixAt(n, m);
-      addCyl(x, z, y - 3, y - 2 + 31 * s.y, 5.5 * k, "tree");
+      const a3 = addCyl(x, z, y - 3, y - 2 + 31 * s.y, 5.5 * k, "tree");
+      a3.tm = 0; a3.ti = n;
       inst.setColorAt(n, c.setHSL(0.27 + rand() * 0.07, 0.3 + rand() * 0.15, 0.17 + rand() * 0.08));
       n++;
     }
@@ -270,6 +275,11 @@ function buildTrees(low) {
   inst.count = n; broad.count = trunks.count = nb;
   const g = new THREE.Group();
   for (const im of [inst, broad, trunks]) { im.instanceMatrix.needsUpdate = true; if (im.instanceColor) im.instanceColor.needsUpdate = true; im.frustumCulled = false; g.add(im); }
+  // trees were placed in random order, so drawing only the first part thins the forest evenly
+  g.userData.setDetail = (frac) => {
+    inst.count = TREE_VIS[0] = Math.floor(n * frac);
+    broad.count = trunks.count = TREE_VIS[1] = Math.floor(nb * frac);
+  };
   return g;
 }
 
@@ -486,6 +496,13 @@ function buildClouds(uni) {
     const w = 380 + rand() * 420;
     cluster(Math.cos(a) * r, 30 + rand() * 60, Math.sin(a) * r, w, w * 0.18, w * 0.6, 9);
   }
+  {
+    const N = hz.length, order = Array.from({ length: N }, (_, i) => i);
+    for (let i = N - 1; i > 0; i--) { const j = Math.floor(rand() * (i + 1)); [order[i], order[j]] = [order[j], order[i]]; }
+    const re = (arr, w) => { const out = new Array(arr.length); order.forEach((src, dst) => { for (let c = 0; c < w; c++) out[dst * w + c] = arr[src * w + c]; }); return out; };
+    const p2 = re(pos, 3), s2 = re(ss, 2), c2 = re(cl, 2), h2 = re(hz, 1);
+    pos.length = ss.length = cl.length = hz.length = 0; pos.push(...p2); ss.push(...s2); cl.push(...c2); hz.push(...h2);
+  }
   const geo = new THREE.InstancedBufferGeometry();
   geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array([-1, -1, 0, 1, -1, 0, 1, 1, 0, -1, 1, 0]), 3));
   geo.setIndex([0, 1, 2, 0, 2, 3]);
@@ -513,6 +530,8 @@ function buildClouds(uni) {
   });
   const mesh = new THREE.Mesh(geo, mat);
   mesh.frustumCulled = false;
+  const full = geo.instanceCount;
+  mesh.userData.setDetail = (frac) => { geo.instanceCount = Math.floor(full * frac); };
   return mesh;
 }
 
@@ -596,9 +615,11 @@ export function createWorld(scene, opts = {}) {
   const sky = buildSky(skyUni);
   const villages = buildVillages();
   const kingdom = new THREE.Group();
-  kingdom.add(terrain, water, buildTrees(opts.low), villages, buildCastle(), islets);
+  const trees = buildTrees(opts.low);
+  kingdom.add(terrain, water, trees, villages, buildCastle(), islets);
   scene.add(sky, kingdom, clouds, glare);
   const themes = { kingdom: { group: kingdom } };
+  let detail = "high";
 
   let time = 0;
   return {
@@ -608,8 +629,17 @@ export function createWorld(scene, opts = {}) {
     get theme() { return THEME; },
     get moodName() { return Object.keys(MOODS).find((k) => MOODS[k] === target) || "day"; },
     // add a world built by another module: { group, update?(dt, camPos, time, mood) }
-    addTheme(name, t) { themes[name] = t; t.group.visible = false; scene.add(t.group); },
+    addTheme(name, t) { themes[name] = t; t.group.visible = false; scene.add(t.group); if (t.setDetail) t.setDetail(detail); },
     hasTheme(name) { return !!themes[name]; },
+    // graphics level "high" | "medium" | "low": fewer trees and cloud puffs, no sun glare on low
+    setDetail(level) {
+      detail = level;
+      const k = level === "low" ? 0.45 : level === "medium" ? 0.7 : 1;
+      trees.userData.setDetail(k);
+      clouds.userData.setDetail(level === "low" ? 0.45 : level === "medium" ? 0.65 : 1);
+      glare.visible = level !== "low";
+      for (const t of Object.values(themes)) if (t.setDetail) t.setDetail(level);
+    },
     setTheme(name) {
       if (!themes[name]) name = "kingdom";
       THEME = name;

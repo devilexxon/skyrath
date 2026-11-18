@@ -43,7 +43,17 @@ const save = { coins: 0, gems: 0, best: 0, gfx: "auto", seenStory: false };
 try { Object.assign(save, JSON.parse(localStorage.getItem("skyrath_save") || "{}")); } catch { /* storage unavailable */ }
 if (!save.sid) save.sid = Math.random().toString(36).slice(2, 10) + Date.now().toString(36);   // identifies this save "line" for cloud sync
 // CrazyGames: saved to the player's account. Android app: also copied to Google Play Games (cloud.js)
-const persist = () => { save.rev = (save.rev || 0) + 1; writeSave("skyrath_save", JSON.stringify(save)); cloudDirty(); };
+let persistT = null;
+function persistNow() {
+  clearTimeout(persistT); persistT = null;
+  save.rev = (save.rev || 0) + 1; writeSave("skyrath_save", JSON.stringify(save)); cloudDirty();
+}
+// saves are grouped: at most one write every 2 s, and right away when the game is hidden or closed
+const persist = () => { if (!persistT) persistT = setTimeout(persistNow, 2000); };
+const flushSave = () => { if (persistT) persistNow(); };
+window.skyrathFlush = flushSave;
+document.addEventListener("visibilitychange", () => { if (document.hidden) flushSave(); });
+window.addEventListener("pagehide", flushSave);
 if (!save.gfxAuto) { save.gfx = "auto"; save.gfxAuto = true; }      // v1.5.1: everyone starts on Auto graphics once
 if (PLATFORM === "windows" && !save.gfxWin) { save.gfx = "high"; save.gfxWin = true; }   // the Windows app starts on High graphics
 const prog = createProgression(save, persist);
@@ -76,7 +86,9 @@ function elementFor(id, skin) {
 
 // ---------------------------------------------------------------- renderer
 const canvas = $("view");
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
+const PHONE = isMobile();
+// phones: no MSAA (glow is off there and the resolution is high enough) and the normal power mode, so they stay cool
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: !PHONE, powerPreference: PHONE ? "default" : "high-performance" });
 const PR = Math.min(window.devicePixelRatio || 1, 1.75);
 renderer.setPixelRatio(PR);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -117,7 +129,8 @@ function layoutControls() {
 resize();
 
 const MOBILE = isMobile();
-const LIGHT_START = IS_CRAZY && MOBILE;     // phones inside the CrazyGames app start lighter; the Android app and PC keep full quality
+const LIGHT_START = MOBILE;                  // every phone (Android app, CrazyGames, browsers) starts on the lighter settings
+if (MOBILE) document.body.classList.add("mobile");
 const world = createWorld(scene, { low: save.gfx === "low" || (save.gfx === "auto" && LIGHT_START) });
 const fx = new FX(scene);
 const portal = createPortal(scene);
@@ -160,15 +173,23 @@ class Dragon {
     this.root.add(this.model);
     this.jaw = null; this.head = null; this.talkT = 0; this.hold = false;
     const skinned = [];
+    this.outlines = [];
     this.model.traverse((o) => {
-      if (o.isSkinnedMesh) { o.material = toonFor(o.material, foe, skinTex); o.frustumCulled = false; skinned.push(o); }
+      if (o.isSkinnedMesh) {
+        o.material = toonFor(o.material, foe, skinTex);
+        // a generous sphere around the bind pose, so wings never get clipped while the dragon is still culled off screen
+        if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere();
+        o.boundingSphere = o.geometry.boundingSphere.clone(); o.boundingSphere.radius *= 1.8;
+        o.frustumCulled = true; skinned.push(o);
+      }
       if (o.isBone && o.name === "jaw") this.jaw = o;
       if (o.isBone && o.name === "head") this.head = o;
     });
     for (const o of skinned) {
       const ol = new THREE.SkinnedMesh(o.geometry, foe ? outlineFoe : outlinePlayer);
       ol.bind(o.skeleton, o.bindMatrix);
-      ol.frustumCulled = false;
+      ol.boundingSphere = o.boundingSphere; ol.frustumCulled = true;
+      this.outlines.push(ol);
       ol.position.copy(o.position); ol.quaternion.copy(o.quaternion); ol.scale.copy(o.scale);
       o.parent.add(ol);
     }
@@ -217,6 +238,8 @@ class Dragon {
     if (this.head) this.head.getWorldPosition(out); else this.root.getWorldPosition(out);
     return out;
   }
+  // the ink outline is a second copy of the mesh; lighter graphics drop it on far dragons
+  setOutline(on) { if (this.outlineOn === on) return; this.outlineOn = on; for (const o of this.outlines) o.visible = on; }
   dispose() { this.mixer.stopAllAction(); this.root.removeFromParent(); }
 }
 
@@ -238,25 +261,34 @@ window.addEventListener("keydown", (e) => {
 window.addEventListener("keyup", (e) => keys.delete(e.code));
 window.addEventListener("blur", () => keys.clear());
 
-const stick = { id: null, cx: 0, cy: 0, x: 0, y: 0 };
+// floating joystick: it appears wherever the thumb lands on the left side, and slides back to its resting spot on release
+const stick = { id: null, cx: 0, cy: 0, x: 0, y: 0, R: 52 };
 const zone = $("stickZone"), base = $("stickBase"), knob = $("stickKnob");
 function stickMove(e) {
   // one stick flies in every direction: left / right turn, up / down climb and dive
   const dx = e.clientX - stick.cx, dy = e.clientY - stick.cy;
-  const R = 52, len = Math.hypot(dx, dy) || 1, k = Math.min(1, len / R);
+  const R = stick.R, len = Math.hypot(dx, dy) || 1, k = Math.min(1, len / R);
   stick.x = (dx / len) * k; stick.y = (-dy / len) * k;
   knob.style.transform = `translate(${(dx / len) * k * R}px, ${(dy / len) * k * R}px)`;
 }
 zone.addEventListener("pointerdown", (e) => {
   audio.unlock();
   if (stick.id !== null) return;
-  stick.id = e.pointerId; zone.setPointerCapture(e.pointerId);
-  const r = base.getBoundingClientRect();
-  stick.cx = r.left + r.width / 2; stick.cy = r.top + r.height / 2;
+  stick.id = e.pointerId;
+  try { zone.setPointerCapture(e.pointerId); } catch { /* synthetic events in tests */ }
+  const zr = zone.getBoundingClientRect(), W = base.offsetWidth || 130, H = base.offsetHeight || 130;
+  const cx = clamp(e.clientX, zr.left + W / 2, zr.right - W / 2), cy = clamp(e.clientY, zr.top + H / 2, zr.bottom - H / 2);
+  base.style.left = `${Math.round(cx - zr.left - W / 2)}px`; base.style.top = `${Math.round(cy - zr.top - H / 2)}px`; base.style.bottom = "auto";
+  base.classList.add("active");
+  stick.cx = cx; stick.cy = cy; stick.R = Math.max(40, W * 0.4);
   stickMove(e);
 });
 zone.addEventListener("pointermove", (e) => { if (e.pointerId === stick.id) stickMove(e); });
-const stickEnd = (e) => { if (e.pointerId !== stick.id) return; stick.id = null; stick.x = stick.y = 0; knob.style.transform = ""; };
+const stickEnd = (e) => {
+  if (e.pointerId !== stick.id) return;
+  stick.id = null; stick.x = stick.y = 0; knob.style.transform = "";
+  base.style.left = base.style.top = base.style.bottom = ""; base.classList.remove("active");   // back to the resting spot
+};
 zone.addEventListener("pointerup", stickEnd); zone.addEventListener("pointercancel", stickEnd);
 
 const held = { fire: false, breath: false, boost: false, mfire: false, mbreath: false };
@@ -306,7 +338,7 @@ function readInput() {
 // ---------------------------------------------------------------- state
 const G = {
   state: "loading", choice: "fire", stage: 0, time: 0, slow: 1, shake: 0, freeze: 0,
-  player: null, enemies: [], shots: [], pickups: [], lock: null, target: null, lockCand: null, lockT: 0,
+  player: null, enemies: [], shots: [], pickups: [], spawnQueue: [], lock: null, target: null, lockCand: null, lockT: 0,
   nextStageT: 0, spawnT: 0, pendingBoss: false, revives: 0, bannerT: 0, menuDragon: null, menuAngle: 0,
   combo: 0, comboT: 0, streak: 0, streakT: 0,
   run: { start: 0, kills: 0, godKills: 0, maxCombo: 0, taken: 0, dmg: 0 },
@@ -339,7 +371,7 @@ function pop(text, cls, at, sub) {
   el.addEventListener("animationend", () => el.remove());
   // a new kill/hit-word pop replaces the previous one instead of stacking on top of it
   if (cls === "down" || cls === "hit" || cls === "crit") { const prev = lastPop[cls]; if (prev && prev.isConnected) prev.remove(); lastPop[cls] = el; }
-  if (popHolder.childElementCount > 24) popHolder.firstElementChild.remove();
+  if (popHolder.childElementCount > 14) popHolder.firstElementChild.remove();
 }
 
 // evolved fire palettes per element: tier 2 is a hotter colour, tier 3 crackles with lightning
@@ -376,7 +408,7 @@ function levelPanel(lv, power) {
   const el = $("lvlPanel");
   el.innerHTML = `<b>LEVEL UP!</b><span class="lvn">LV ${lv}</span><small>+12 MAX HP · +6% DAMAGE</small>${power ? `<em>NEW POWER: ${power}</em>` : ""}`;
   el.classList.remove("show"); void el.offsetWidth; el.classList.add("show");
-  clearTimeout(lvlT); lvlT = setTimeout(() => el.classList.remove("show"), power ? 3200 : 2500);
+  clearTimeout(lvlT); lvlT = setTimeout(() => el.classList.remove("show"), 2400);
 }
 
 function gainXp(n) {
@@ -500,7 +532,7 @@ function clearRun() {
   for (const c of G.pickups) c.s.removeFromParent();
   G.enemies.length = G.shots.length = G.pickups.length = 0;
   if (G.player) { G.player.dragon.dispose(); G.player = null; }
-  G.lock = G.target = null; G.nextStageT = 0; G.spawnT = 0;
+  G.lock = G.target = null; G.nextStageT = 0; G.spawnT = 0; G.spawnQueue.length = 0;
   $("bossbar").classList.add("hidden"); popHolder.textContent = "";
 }
 
@@ -688,22 +720,29 @@ function typeBehaviour(e, dt, p, dist, dmg) {
   return false;
 }
 
+// dragons are built one per frame (building one is heavy), so a new wave never makes the game stutter
+const spawnLater = (fn) => G.spawnQueue.push(fn);
 function spawnWave() {
   const n = G.pendingBoss ? 2 : Math.min(2 + Math.floor((G.stage - 1) / 2), 7);
   if (G.pendingBoss) spawnEnemy(true);
-  for (let i = 0; i < n; i++) spawnEnemy(false);
+  for (let i = 0; i < n; i++) spawnLater(() => spawnEnemy(false));
   // from stage 2: a pack of small, fast, weak wisp drakes flying together, for satisfying multi-kills
   if (G.stage >= 2 && !G.pendingBoss) {
     const pack = { a: rand(0, Math.PI * 2), orbit: Math.random() < 0.5 ? 1 : -1 };
     const k = QUAL.light ? 2 : G.stage >= 6 ? 4 : 3;
-    for (let i = 0; i < k; i++) spawnEnemy(false, pack);
+    for (let i = 0; i < k; i++) spawnLater(() => spawnEnemy(false, pack));
   }
   if (G.stage === 1) audio.say("announcer", "fight", 0, true);
 }
 
+const shotMats = new Map();
+function shotMat(color) {
+  let m = shotMats.get(color);
+  if (!m) { m = new THREE.SpriteMaterial({ map: shotTex, color, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, fog: false }); shotMats.set(color, m); }
+  return m;
+}
 function shoot(owner, from, dir, speed, dmg, el, size, target, crit) {
-  const m = new THREE.SpriteMaterial({ map: shotTex, color: el.core, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, fog: false });
-  const s = new THREE.Sprite(m);
+  const s = new THREE.Sprite(shotMat(el.core));
   s.scale.setScalar(size);
   s.position.copy(from);
   scene.add(s);
@@ -800,8 +839,10 @@ function hurtEnemy(e, dmg, at, kind) {
   G.run.dmg += dmg; G.run.maxCombo = Math.max(G.run.maxCombo, G.combo);
   hitMark(e.hp <= 0, kind === "weak" || kind === "crit");
   // floating damage numbers (breath ticks are added up so they don't spam)
-  if (kind === "breath") { e.dmgAcc = (e.dmgAcc || 0) + dmg; if ((e.dmgT = (e.dmgT || 0) + 1) % 4 === 0) { pop(String(Math.round(e.dmgAcc)), "dmg", at || e.pos); e.dmgAcc = 0; } }
-  else pop(String(Math.round(dmg)), kind === "weak" || kind === "crit" ? "dmg big" : "dmg", at || e.pos);
+  // damage numbers: hits on the same enemy are added up and shown together, about 3 times a second (crits right away)
+  const bigHit = kind === "weak" || kind === "crit";
+  e.dmgAcc = (e.dmgAcc || 0) + dmg;
+  if (bigHit || G.time - (e.dmgShowT || -9) > 0.32) { pop(String(Math.round(e.dmgAcc)), bigHit ? "dmg big" : "dmg", at || e.pos); e.dmgAcc = 0; e.dmgShowT = G.time; }
   if (kind !== "breath") {
     fx.burst(at || e.pos, p.fireEl, 8, 70, 10, 0.45);
     fx.shards(at || e.pos, [0xffd23c, p.fireEl.glow, 0xffffff], kind === "crit" || kind === "weak" ? 18 : 10, 150, 7, 0.45);
@@ -1224,6 +1265,7 @@ function updateEnemies(dt) {
     }
     tmp.copy(p.pos).sub(e.pos);
     const dist = tmp.length() || 1;
+    e.dragon.setOutline(QUAL.detail === "high" || e.boss || dist < 260);
     tmp.divideScalar(dist);
     if (e.godDef) {                                   // gods drift, swoop and teleport, face you, and fight with their own patterns
       const busy = godMove(e, edt, godCtx);
@@ -1389,7 +1431,7 @@ function updateShots(dt) {
     } else if (!dead && p && !p.dead && p.pos.distanceToSquared(s.pos) < 110) {
       if (p.invuln <= 0) { damagePlayer(s.dmg); fx.burst(s.pos, s.el, 10, 50, 9, 0.4); dead = true; }
     }
-    if (dead) { if (s.life > 0) fx.burst(s.pos, s.el, 5, 30, 7, 0.3); s.s.removeFromParent(); s.s.material.dispose(); G.shots.splice(i, 1); }
+    if (dead) { if (s.life > 0) fx.burst(s.pos, s.el, 5, 30, 7, 0.3); s.s.removeFromParent(); G.shots.splice(i, 1); }
   }
 }
 
@@ -1424,6 +1466,7 @@ function updateStage(dt) {
     }
     return;
   }
+  if (G.spawnQueue.length) { G.spawnQueue.shift()(); return; }
   if (G.nextStageT > 0) { G.nextStageT -= dt; if (G.nextStageT <= 0) nextStage(1.6); return; }
   if (!G.enemies.some((e) => e.state === "alive") && G.state === "play") {
     const p = G.player;
@@ -1459,38 +1502,47 @@ function updateCamera(dt) {
 
 const markerPool = [], platePool = [];
 let lastLayout = "";
+// cached HUD writers: the browser only does work when a value changes
+const HC = {};
+const hel = (id) => HC[id] || (HC[id] = document.getElementById(id));
+function setTxt(id, v) { const e = hel(id); if (e._t !== v) { e._t = v; e.textContent = v; } }
+function setTf(id, f) { const e = hel(id); const v = `scaleX(${f.toFixed(3)})`; if (e._tf !== v) { e._tf = v; e.style.transform = v; } }
+function setCls(id, c, on) { const e = hel(id); const k = "_c" + c; if (e[k] !== on) { e[k] = on; e.classList.toggle(c, on); } }
+function setVar(id, n, v) { const e = hel(id); const k = "_v" + n; if (e[k] !== v) { e[k] = v; e.style.setProperty(n, v); } }
+function setSt(e, prop, v) { if (e["_s" + prop] !== v) { e["_s" + prop] = v; e.style[prop] = v; } }
+const aliveBuf = [];
 function updateHud() {
   const p = G.player;
   const sz = innerWidth + "x" + innerHeight;           // re-fit the buttons if the screen size changed (rotation, resize)
   if (sz !== lastLayout) { lastLayout = sz; layoutControls(); }
-  $("hpFill").style.transform = `scaleX(${clamp(p.hp / p.maxHp, 0, 1)})`;
-  $("hpText").textContent = `${Math.ceil(p.hp)} / ${p.maxHp}`;
-  $("xpFill").style.transform = `scaleX(${clamp(p.xp / xpNeed(p.lv), 0, 1)})`;
-  $("plv").textContent = p.lv;
-  $("enFill").style.transform = `scaleX(${p.energy / 100})`;
-  $("heatFill").style.transform = `scaleX(${p.heat / 100})`;
-  $("ultFill").style.transform = `scaleX(${p.ult / 100})`;
-  $("coins").textContent = save.coins; $("gems").textContent = save.gems;
-  $("bUlt").classList.toggle("ready", p.ult >= 100);
-  $("bBreath").classList.toggle("cool", !!p.overheat); $("bBreath").classList.toggle("active", p.breathing);
-  $("bBoost").classList.toggle("cool", p.energy < 5);
-  $("bDodge").classList.toggle("cool", p.dodgeT > 0);
-  $("bDodge").style.setProperty("--p", Math.round(clamp(1 - p.dodgeT / 1.3, 0, 1) * 100));
-  $("bUlt").style.setProperty("--p", Math.round(p.ult));
-  const ch = $("charge");
-  ch.style.display = p.charge > 0.12 ? "block" : "none";
-  $("chargeFill").style.transform = `scaleX(${p.charge})`; ch.classList.toggle("full", p.charge >= 1);
-  const alive = G.enemies.filter((e) => e.state === "alive");
-  $("foes").textContent = alive.length ? `ENEMIES ${alive.length}` : "";
+  setTf("hpFill", clamp(p.hp / p.maxHp, 0, 1));
+  setTxt("hpText", `${Math.ceil(p.hp)} / ${p.maxHp}`);
+  setTf("xpFill", clamp(p.xp / xpNeed(p.lv), 0, 1));
+  setTxt("plv", String(p.lv));
+  setTf("enFill", p.energy / 100);
+  setTf("heatFill", p.heat / 100);
+  setTf("ultFill", p.ult / 100);
+  setTxt("coins", String(save.coins)); setTxt("gems", String(save.gems));
+  setCls("bUlt", "ready", p.ult >= 100);
+  setCls("bBreath", "cool", !!p.overheat); setCls("bBreath", "active", !!p.breathing);
+  setCls("bBoost", "cool", p.energy < 5);
+  setCls("bDodge", "cool", p.dodgeT > 0);
+  setVar("bDodge", "--p", String(Math.round(clamp(1 - p.dodgeT / 1.3, 0, 1) * 20) * 5));
+  setVar("bUlt", "--p", String(Math.round(p.ult / 5) * 5));
+  setSt(hel("charge"), "display", p.charge > 0.12 ? "block" : "none");
+  setTf("chargeFill", p.charge); setCls("charge", "full", p.charge >= 1);
+  const alive = aliveBuf; alive.length = 0;
+  for (const e of G.enemies) if (e.state === "alive") alive.push(e);
+  setTxt("foes", alive.length ? `ENEMIES ${alive.length}` : "");
   const boss = alive.find((e) => e.boss);
-  if (boss) $("bossFill").style.transform = `scaleX(${clamp(boss.hp / boss.maxHp, 0, 1)})`;
-  const combo = $("combo");
-  if (G.combo >= 5) { combo.textContent = `${G.combo} HIT COMBO`; combo.classList.add("show"); } else combo.classList.remove("show");
+  if (boss) setTf("bossFill", clamp(boss.hp / boss.maxHp, 0, 1));
+  if (G.combo >= 5) { setTxt("combo", `${G.combo} HIT COMBO`); setCls("combo", "show", true); } else setCls("combo", "show", false);
 
-  const w = window.innerWidth, h = window.innerHeight, holder = $("markers");
+  const w = window.innerWidth, h = window.innerHeight, holder = hel("markers");
   let used = 0;
-  const markTargets = G.rift && portal.active ? [...alive, { pos: portal.pos, boss: true }] : alive;
-  for (const e of markTargets) {
+  const nMark = alive.length + (G.rift && portal.active ? 1 : 0);
+  for (let i = 0; i < nMark; i++) {
+    const e = i < alive.length ? alive[i] : { pos: portal.pos, boss: true };
     tmp.copy(e.pos).project(camera);
     const behind = tmp.z > 1;
     let x = tmp.x, y = tmp.y;
@@ -1500,17 +1552,18 @@ function updateHud() {
     x /= len; y /= len;
     let m = markerPool[used];
     if (!m) { m = document.createElement("div"); holder.appendChild(m); markerPool.push(m); }
-    m.className = e.boss ? "marker boss" : "marker";
-    m.style.display = "block";
-    m.style.left = `${(x * 0.5 + 0.5) * w}px`; m.style.top = `${(-y * 0.5 + 0.5) * h}px`;
-    m.style.transform = `rotate(${Math.atan2(x, y)}rad)`;
+    const cls = e.boss ? "marker boss" : "marker";
+    if (m._cls !== cls) { m._cls = cls; m.className = cls; }
+    setSt(m, "display", "block");
+    setSt(m, "left", `${Math.round((x * 0.5 + 0.5) * w)}px`); setSt(m, "top", `${Math.round((-y * 0.5 + 0.5) * h)}px`);
+    setSt(m, "transform", `rotate(${Math.atan2(x, y).toFixed(2)}rad)`);
     used++;
   }
-  for (let i = used; i < markerPool.length; i++) markerPool[i].style.display = "none";
+  for (let i = used; i < markerPool.length; i++) setSt(markerPool[i], "display", "none");
 
   // nameplates: name and a small health bar over every on-screen enemy within 500 m (bosses use the big bar)
   let np = 0;
-  const plates = $("plates");
+  const plates = hel("plates");
   for (const e of alive) {
     if (e.boss || e === G.target) continue;
     const d = e.pos.distanceTo(p.pos);
@@ -1519,30 +1572,31 @@ function updateHud() {
     if (tmp.z > 1 || Math.abs(tmp.x) > 0.95 || Math.abs(tmp.y) > 0.95) continue;
     let el = platePool[np];
     if (!el) { el = document.createElement("div"); el.className = "plate"; el.innerHTML = "<span></span><i><b></b></i>"; plates.appendChild(el); platePool.push(el); }
-    el.style.display = "block";
-    el.style.left = `${(tmp.x * 0.5 + 0.5) * w}px`; el.style.top = `${(-tmp.y * 0.5 + 0.5) * h}px`;
-    el.style.opacity = d > 380 ? (500 - d) / 120 : 1;
+    setSt(el, "display", "block");
+    setSt(el, "left", `${Math.round((tmp.x * 0.5 + 0.5) * w)}px`); setSt(el, "top", `${Math.round((-tmp.y * 0.5 + 0.5) * h)}px`);
+    setSt(el, "opacity", d > 380 ? ((500 - d) / 120).toFixed(2) : "1");
     if (el.dataset.n !== e.name) { el.firstChild.textContent = e.name; el.dataset.n = e.name; }
-    el.lastChild.firstChild.style.transform = `scaleX(${clamp(e.hp / e.maxHp, 0, 1)})`;
+    setSt(el.lastChild.firstChild, "transform", `scaleX(${clamp(e.hp / e.maxHp, 0, 1).toFixed(3)})`);
     np++;
   }
-  for (let i = np; i < platePool.length; i++) platePool[i].style.display = "none";
+  for (let i = np; i < platePool.length; i++) setSt(platePool[i], "display", "none");
 
-  const ret = $("reticle"), t = G.target;
-  ret.classList.remove("has");
+  const ret = hel("reticle"), t = G.target;
+  setCls("reticle", "has", false);
   if (t) {
     tmp.copy(t.pos).project(camera);
     if (tmp.z < 1 && Math.abs(tmp.x) < 1 && Math.abs(tmp.y) < 1) {
-      ret.style.display = "block"; ret.style.left = `${(tmp.x * 0.5 + 0.5) * w}px`; ret.style.top = `${(-tmp.y * 0.5 + 0.5) * h}px`;
-      ret.classList.toggle("locked", G.lock === t);
-      ret.classList.toggle("locking", G.lock !== t && G.lockCand === t);
-      ret.style.setProperty("--hp", `${clamp(t.hp / t.maxHp, 0, 1) * 100}%`);
+      setSt(ret, "display", "block");
+      setSt(ret, "left", `${Math.round((tmp.x * 0.5 + 0.5) * w)}px`); setSt(ret, "top", `${Math.round((-tmp.y * 0.5 + 0.5) * h)}px`);
+      setCls("reticle", "locked", G.lock === t);
+      setCls("reticle", "locking", G.lock !== t && G.lockCand === t);
+      setVar("reticle", "--hp", `${Math.round(clamp(t.hp / t.maxHp, 0, 1) * 100)}%`);
       const dist = t.pos.distanceTo(p.pos);
       const inRange = dist < 270 + (t.radius || 0);
-      $("retInfo").textContent = `${G.lock === t ? "LOCKED  " : ""}${t.name}  ${inRange ? "" : Math.round(dist) + " m"}`;
-      $("inRange").style.display = inRange ? "block" : "none";
-    } else ret.style.display = "none";
-  } else ret.style.display = "none";
+      setTxt("retInfo", `${G.lock === t ? "LOCKED  " : ""}${t.name}  ${inRange ? "" : Math.round(dist / 10) * 10 + " m"}`);
+      setSt(hel("inRange"), "display", inRange ? "block" : "none");
+    } else setSt(ret, "display", "none");
+  } else setSt(ret, "display", "none");
 }
 
 // ---------------------------------------------------------------- menu
@@ -1842,35 +1896,48 @@ $("resumeBtn").addEventListener("click", togglePause);
 $("exitBtn").addEventListener("click", showMenu);
 $("quitBtn").addEventListener("click", showMenu);
 // ---------------------------------------------------------------- settings (music, effects and voices each have their own volume)
-const SET = save.settings = Object.assign({ music: 40, sfx: 100, voice: 100, shake: true, look: 100, invert: false }, save.settings || {});
+const SET = save.settings = Object.assign({ music: 40, sfx: 100, voice: 100, shake: true, fps: 60 }, save.settings || {});
 // ---------------------------------------------------------------- graphics quality
-// High: full resolution and glow. Low: no glow, 1x resolution, fewer particles.
-// Auto (default): starts lighter on phones, then steps down by itself if the frame rate stays under ~42 fps.
-const QUAL = { level: 0, bloom: true, pr: PR, light: false };
+// High: glow, sharp resolution, every tree and cloud. Medium: no glow, fewer trees and clouds. Low: lowest resolution and detail.
+// Auto (default): PCs start on High and phones on Medium; it steps down by itself when the frame rate drops, and steps
+// back up once if the game runs smoothly for a while. Frame rate is capped at 60 (or 30 with Battery saver).
+const QUAL = { level: 0, bloom: true, pr: PR, light: false, detail: "high", weak: false };
 const AUTO_STEPS = [
-  { bloom: true, prMax: 1.75, light: false },
-  { bloom: false, prMax: 1.5, light: false },
-  { bloom: false, prMax: 1.0, light: true },
-  { bloom: false, prMax: 0.8, light: true },
+  { bloom: true, prMax: 1.75, light: false, detail: "high" },
+  { bloom: false, prMax: 1.25, light: false, detail: "medium" },
+  { bloom: false, prMax: 1.0, light: true, detail: "low" },
+  { bloom: false, prMax: 0.8, light: true, detail: "low" },
 ];
+const FIXED_Q = { high: AUTO_STEPS[0], medium: AUTO_STEPS[1], low: AUTO_STEPS[2] };
+const START_LEVEL = LIGHT_START ? 1 : 0;
+QUAL.level = START_LEVEL;
 function applyQuality() {
   const dpr = window.devicePixelRatio || 1;
-  let st;
-  if (save.gfx === "high") st = { bloom: true, prMax: 1.75, light: false };
-  else if (save.gfx === "low") st = { bloom: false, prMax: 1.0, light: true };
-  else st = AUTO_STEPS[QUAL.level];
-  QUAL.bloom = st.bloom; QUAL.light = st.light;
-  QUAL.pr = Math.min(dpr, st.prMax, save.gfx === "auto" && LIGHT_START ? 1.25 : 9);
-  fx.low = st.light;
+  const st = FIXED_Q[save.gfx] || AUTO_STEPS[QUAL.level];
+  QUAL.bloom = st.bloom; QUAL.light = st.light; QUAL.detail = st.detail;
+  QUAL.pr = Math.min(dpr, st.prMax);
+  fx.setDetail(st.detail);
+  world.setDetail(st.detail);
+  document.body.classList.toggle("noblur", MOBILE || st.detail !== "high");   // frosted-glass blur is costly: PC High only
   renderer.setPixelRatio(QUAL.pr); composer.setPixelRatio(QUAL.pr); resize();
 }
-const fps = { t: 0, n: 0 };
+// frames per second the game aims for right now
+function playCap() { return SET.fps === 30 || (QUAL.weak && !SET.fpsSet) ? 30 : 60; }
+const fps = { t: 0, n: 0, good: 0, ups: 0, low: 0 };
 function autoQuality(real) {
-  if (save.gfx !== "auto" || G.state !== "play" || G.adPause || document.hidden || real > 0.25) { fps.t = 0; fps.n = 0; return; }
+  const measuring = save.gfx === "auto" && (G.state === "play" || G.state === "menu") && !G.adPause && !document.hidden && real < 0.25;
+  if (!measuring) { fps.t = 0; fps.n = 0; return; }
   fps.t += real; fps.n++;
   if (fps.t < 3) return;
-  const rate = fps.n / fps.t; fps.t = 0; fps.n = 0;
-  if (rate < 42 && QUAL.level < AUTO_STEPS.length - 1) { QUAL.level++; applyQuality(); console.info(`auto graphics: ${rate.toFixed(0)} fps -> step ${QUAL.level}`); }
+  const rate = fps.n / fps.t, target = G.capFps || 60; fps.t = 0; fps.n = 0;
+  if (rate < target * 0.83) {
+    fps.good = 0;
+    if (QUAL.level < AUTO_STEPS.length - 1) { QUAL.level++; applyQuality(); console.info(`auto graphics: ${rate.toFixed(0)} fps -> step ${QUAL.level}`); }
+    else if (!QUAL.weak && G.state === "play" && ++fps.low >= 2) { QUAL.weak = true; console.info("auto graphics: weak device, 30 fps"); }
+  } else if (rate > target * 0.95) {
+    fps.good += 3;
+    if (fps.good >= 21 && fps.ups < 1 && QUAL.level > START_LEVEL) { QUAL.level--; fps.ups++; fps.good = 0; applyQuality(); console.info(`auto graphics: smooth, back to step ${QUAL.level}`); }
+  } else fps.good = 0;
 }
 
 function applySettings() {
@@ -1880,6 +1947,7 @@ function applySettings() {
 function refreshSettings() {
   for (const [id, key] of [["volMusic", "music"], ["volSfx", "sfx"], ["volVoice", "voice"]]) { $(id).value = SET[key]; $(id + "V").textContent = SET[key]; }
   for (const b of $("gfxSeg").children) b.classList.toggle("on", b.dataset.v === save.gfx);
+  for (const b of $("fpsSeg").children) b.classList.toggle("on", Number(b.dataset.v) === playCap());
   for (const b of $("shakeSeg").children) b.classList.toggle("on", (b.dataset.v === "on") === SET.shake);
 }
 for (const [id, key] of [["volMusic", "music"], ["volSfx", "sfx"], ["volVoice", "voice"]]) {
@@ -1887,6 +1955,7 @@ for (const [id, key] of [["volMusic", "music"], ["volSfx", "sfx"], ["volVoice", 
   $(id).addEventListener("change", () => persist());
 }
 for (const b of $("gfxSeg").children) b.addEventListener("click", () => { save.gfx = b.dataset.v; persist(); applySettings(); refreshSettings(); });
+for (const b of $("fpsSeg").children) b.addEventListener("click", () => { SET.fps = Number(b.dataset.v); SET.fpsSet = true; persist(); refreshSettings(); });
 for (const b of $("shakeSeg").children) b.addEventListener("click", () => { SET.shake = b.dataset.v === "on"; persist(); refreshSettings(); });
 for (const b of document.querySelectorAll(".setOpen")) b.addEventListener("click", () => { audio.unlock(); refreshSettings(); $("settings").classList.remove("hidden"); });
 $("setClose").addEventListener("click", () => { persist(); $("settings").classList.add("hidden"); });
@@ -1914,16 +1983,24 @@ function revivePlayer() {
 
 // ---------------------------------------------------------------- loop
 const clock = new THREE.Clock();
+let lastFrame = 0;
 function frame() {
   // ?bot runs the loop on a timer so automated tests keep playing in a hidden or background window
   if (BOT) setTimeout(frame, 16); else requestAnimationFrame(frame);
+  // frame cap: 60 (or 30) while playing, 30 in menus, nearly nothing while paused or during an ad.
+  // 90/120 Hz phones used to render twice as many frames as needed, which is what made them hot.
+  const cap = G.adPause || G.state === "paused" ? 2 : (G.state === "play" || G.state === "story") ? playCap() : 30;
+  G.capFps = cap;
+  const now = performance.now(), interval = 1000 / cap, since = now - lastFrame;
+  if (since < interval - 2) return;
+  lastFrame = since > interval * 3 ? now : lastFrame + interval;
   const real = clock.getDelta();
   const raw = Math.min(real, 0.05);
   G.time += raw;
   if (G.bannerT > 0) { G.bannerT -= raw; if (G.bannerT <= 0) $("banner").classList.remove("show"); }
   if (G.freeze > 0) G.freeze -= raw;
   const dt = G.freeze > 0 ? raw * 0.06 : raw;       // hit-stop: the world nearly freezes for a few frames on a kill
-  if (G.adPause) { renderer.render(scene, camera); return; }   // an ad is showing: freeze everything
+  if (G.adPause || G.state === "paused") { renderer.render(scene, camera); return; }   // ad or pause: just keep the picture
 
   if (G.state === "play" || G.state === "down") {
     readInput();

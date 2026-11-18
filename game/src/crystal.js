@@ -190,10 +190,16 @@ export function buildCrystalWorld(low) {
   const snow = buildSnow(low);
   group.add(aurora.group, snow.pts);
   const winds = makeWindZones();
+  const snowN = snow.pts.geometry.attributes.position.count;
   return {
     group,
     winds,
     spawn: new THREE.Vector3(0, 460, -1500),
+    // lower graphics: less snow and fainter, fewer aurora ribbons
+    setDetail(level) {
+      snow.pts.geometry.setDrawRange(0, Math.floor(snowN * (level === "low" ? 0.4 : level === "medium" ? 0.65 : 1)));
+      aurora.group.children.forEach((r, i) => { r.visible = level !== "low" || i === 0; });
+    },
     update(dt, camPos, time, mood) {
       aurora.uni.uT.value = time;
       // northern lights glow brighter as the sky darkens

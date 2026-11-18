@@ -128,7 +128,7 @@ public class MainActivity extends Activity {
     protected void onPause() {
         super.onPause();
         // send any save that is still waiting to the cloud before the app goes to the background
-        web.evaluateJavascript("window.skyrathCloud && window.skyrathCloud.flush()", null);
+        web.evaluateJavascript("window.skyrathFlush && window.skyrathFlush(); window.skyrathCloud && window.skyrathCloud.flush()", null);
         web.onPause();
     }
 
