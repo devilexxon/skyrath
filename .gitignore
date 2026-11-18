@@ -1,0 +1,36 @@
+# ---- secrets: never publish signing keys
+*.keystore
+*.jks
+*.p12
+*.pem
+*.key
+.env
+.env.*
+
+# ---- build output (made by tools/build_*.mjs / .sh)
+dist/
+build/
+
+# full-size models stay private; the repo ships the optimized ones in assets/models_opt (what players download)
+assets/models/
+
+# ---- working files, raw sources and experiments
+work/
+assets/previews/
+assets/audio/raw/
+assets/audio/raw_story/
+assets/audio/samples/
+assets/audio/sfx_raw/
+crazygames_covers/
+itch/
+
+# ---- tools and editors
+.claude/
+node_modules/
+__pycache__/
+*.pyc
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+.DS_Store

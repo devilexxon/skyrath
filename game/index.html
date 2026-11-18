@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Skyrath</title>
+<link rel="stylesheet" href="style.css">
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<canvas id="view"></canvas>
+<div id="warp"></div>
+<div id="frost"></div>
+<div id="toast"></div>
+
+<div id="hud" class="hidden">
+  <div id="topleft">
+    <div class="pill"><span class="ico coin"></span><b id="coins">0</b></div>
+    <div class="pill"><span class="ico gem"></span><b id="gems">0</b></div>
+  </div>
+  <div id="banner"><div id="bannerTitle"></div><div id="bannerSub"></div></div>
+  <div id="topright">
+    <div id="lvl"><span class="lvbadge">LV <b id="plv">1</b></span> STAGE <b id="level">1</b></div>
+    <div class="brow" title="Health"><b class="bico hp">&#10084;</b><div class="bar hp"><i id="hpFill"></i><span id="hpText"></span></div></div>
+    <div class="brow" title="Experience"><b class="bico xp">XP</b><div class="bar xp"><i id="xpFill"></i></div></div>
+    <div class="brow" title="Boost energy"><b class="bico en">&#187;</b><div class="bar en"><i id="enFill"></i></div></div>
+    <div class="brow" title="Breath heat"><b class="bico heat">&#128293;</b><div class="bar heat"><i id="heatFill"></i></div></div>
+    <div class="brow" title="Surge charge"><b class="bico ult">&#9733;</b><div class="bar ult"><i id="ultFill"></i></div></div>
+    <div id="foes"></div>
+  </div>
+  <div id="lvlPanel"></div>
+  <div id="plates"></div>
+  <div id="reticle"><span id="retInfo"></span><em id="inRange">IN RANGE</em></div>
+  <div id="hitmark"></div>
+  <div id="charge"><i id="chargeFill"></i></div>
+  <div id="markers"></div>
+  <div id="pops"></div>
+  <div id="combo"></div>
+  <div id="bossbar" class="hidden"><div id="bossName">BOSS</div><div class="bar boss"><i id="bossFill"></i></div><div id="bossWarn"></div></div>
+
+  <div id="stickZone"><div id="stickBase" class="glass"><div id="stickKnob"></div></div></div>
+  <div id="buttons">
+    <button class="btn glass mid gold" id="bUlt" data-act="ult"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l2.600 6.200L21 9l-4.800 4.200L17.600 20 12 16.500 6.400 20l1.400-6.800L3 9l6.400-.8z"/></svg><span>SURGE</span><i class="ring"></i></button>
+    <button class="btn glass mid t-boost" id="bBoost" data-act="boost"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6l6 6-6 6M12 6l6 6-6 6"/></svg><span>BOOST</span></button>
+    <button class="btn glass mid t-breath" id="bBreath" data-act="breath"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8h9a2.5 2.5 0 1 0-2.500-2.500M3 12h14a3 3 0 1 1-3 3M3 16h6"/></svg><span>BREATH</span></button>
+    <button class="btn glass mid t-boost" id="bDodge" data-act="dodge"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 7L5 12l5 5M5 12h9a5 5 0 0 0 5-5M14 17l5-5"/></svg><span>DODGE</span><i class="ring"></i></button>
+    <button class="btn glass big t-fire" id="bFire" data-act="fire"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2c1 4 5 5.5 5 10.5A5 5 0 0 1 7 12.5c0-2 1-3.2 2-4.2.2 1.6 1 2.4 1.8 2.6C10.200 8 10.800 5 12 2z"/></svg><span>FIRE</span></button>
+  </div>
+  <button id="pauseBtn" class="btn glass tiny">II</button>
+</div>
+
+<div id="menu" class="overlay">
+  <button id="gearBtn" class="btn glass tiny setOpen" aria-label="Settings"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/></svg></button>
+  <div id="wallet" class="hidden"><div class="pill"><span class="ico coin"></span><b id="mCoins">0</b></div><div class="pill"><span class="ico gem"></span><b id="mGems">0</b></div></div>
+  <h1>SKYRATH</h1>
+  <div id="tabs"><button class="tab glass sel" data-tab="dragons">PLAY</button><button class="tab glass" data-tab="upgrades">UPGRADES</button><button class="tab glass" data-tab="shop">SHOP</button><button class="tab glass" data-tab="missions">MISSIONS <i id="missionBadge" class="badge"></i></button></div>
+  <div id="tab-dragons" class="tabpanel">
+    <div id="cards"></div>
+    <button id="startBtn" class="cta" disabled>Loading&hellip;</button>
+    <p class="ver">v1.8.2</p>
+  </div>
+  <div id="tab-upgrades" class="tabpanel hidden">
+    <p class="note">Upgrades are permanent and work for every dragon. Earn coins by defeating enemies.</p>
+    <div id="upgList"></div>
+  </div>
+  <div id="tab-missions" class="tabpanel hidden">
+    <div class="mpanel">
+      <h3>Daily reward</h3>
+      <div id="dailyRow"></div>
+      <button id="dailyClaim" class="cta slim">Claim</button>
+      <h3>Today's missions <small>(new ones every day)</small></h3>
+      <div id="missionList"></div>
+      <h3>Achievements</h3>
+      <div id="achList"></div>
+    </div>
+  </div>
+  <div id="tab-shop" class="tabpanel hidden">
+    <div id="shopTabs" class="seg"><button data-s="dragons" class="on">DRAGONS</button><button data-s="skins">SKINS</button><button data-s="items">ITEMS</button></div>
+    <div id="shop-dragons" class="shoppanel"><div id="legendCards"></div></div>
+    <div id="shop-skins" class="shoppanel hidden"><div id="skinPick" class="seg"></div><div id="skinRow"></div></div>
+    <div id="shop-items" class="shoppanel hidden">
+    <div class="shopgrid">
+      <div class="sitem"><b>Free chest</b><span>Coins and gems every 4 hours. Bigger as your best stage grows.</span><button id="chestBtn" class="cta slim">Open free chest</button><button id="chestAdBtn" class="cta slim hidden"><svg class="vid" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="5" width="15" height="14" rx="3"/><path d="M17 10l5-3v10l-5-3z"/></svg> Watch an ad to open now</button><em id="chestMsg"></em></div>
+      <div class="sitem"><b>Phoenix Feather</b><span id="featherInfo"></span><button id="featherBuy" class="cta slim"><span class="ico gem"></span> 5 gems</button></div>
+      <div class="sitem"><b>Exchange</b><span>Turn gems into coins: 1 gem = 60 coins.</span><div class="row"><button id="exch1" class="cta slim ghost">1 gem</button><button id="exch10" class="cta slim ghost">10 gems</button></div></div>
+      <div class="sitem soon" id="gemPacks"><b>Gem packs</b><span>Coming soon.</span></div>
+    </div>
+    </div>
+  </div>
+</div>
+
+<div id="down" class="overlay hidden">
+  <h2>Defeated</h2>
+  <div class="rankrow"><span>RUN RANK</span><b id="rank" class="rank">D</b></div>
+  <p id="downInfo"></p>
+  <button id="adReviveBtn" class="cta hidden"><svg class="vid" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="5" width="15" height="14" rx="3"/><path d="M17 10l5-3v10l-5-3z"/></svg> Watch an ad to revive</button>
+  <button id="featherBtn" class="cta"></button>
+  <button id="reviveBtn" class="cta"></button>
+  <button id="quitBtn" class="cta ghost">Back to menu</button>
+</div>
+
+<div id="paused" class="overlay hidden">
+  <h2>Paused</h2>
+  <button id="resumeBtn" class="cta">Resume</button>
+  <button class="cta ghost setOpen">Settings</button>
+  <button id="exitBtn" class="cta ghost">Back to menu</button>
+</div>
+
+<div id="settings" class="overlay hidden">
+  <h2>Settings</h2>
+  <div class="setpanel glassbox">
+    <label class="srow"><span>Music</span><input type="range" id="volMusic" min="0" max="100" step="1"><b id="volMusicV"></b></label>
+    <label class="srow"><span>Sound effects</span><input type="range" id="volSfx" min="0" max="100" step="1"><b id="volSfxV"></b></label>
+    <label class="srow"><span>Voices</span><input type="range" id="volVoice" min="0" max="100" step="1"><b id="volVoiceV"></b></label>
+    <div class="srow"><span>Graphics</span><div class="seg" id="gfxSeg"><button data-v="auto">Auto</button><button data-v="high">High</button><button data-v="low">Low</button></div></div>
+    <div class="srow"><span>Screen shake</span><div class="seg" id="shakeSeg"><button data-v="on">On</button><button data-v="off">Off</button></div></div>
+    <div class="srow" id="fsRow"><span>Screen</span><button id="fsBtn" class="mini">Full screen</button></div>
+    <div class="srow"><span>Story</span><button id="storyBtn" class="mini">Watch the story</button></div>
+    <p class="note">How to play. Phone: the stick flies in every direction (turn, climb, dive); point at an enemy and it locks on. FIRE shoots (hold to charge a blast), BREATH burns up close, BOOST speeds up, DODGE rolls, SURGE unleashes your power. PC: W A S D or arrow keys fly, Space or left click fire, right click breath, Shift boost, Q / E dodge, F surge, Esc or P pause.</p>
+    <p class="note" id="gfxNote">Auto lowers the quality by itself if the game starts to lag. Low turns off glow and lowers resolution for older phones.</p>
+  </div>
+  <button id="setClose" class="cta">Done</button>
+</div>
+
+<div id="dailyPop" class="overlay hidden">
+  <h2>Daily reward</h2>
+  <p id="dailyPopText"></p>
+  <button id="dailyPopClaim" class="cta">Claim</button>
+  <button id="dailyPopClose" class="cta ghost">Later</button>
+</div>
+
+<div id="begin" class="overlay hidden">
+  <h1>SKYRATH</h1>
+  <p class="tag">The tale of four dragons</p>
+  <button id="beginBtn" class="cta">BEGIN</button>
+</div>
+
+<div id="story" class="hidden">
+  <div class="lb top"></div><div class="lb bot"></div>
+  <div id="storyTitle">SKYRATH</div>
+  <p id="storyText"></p>
+  <button id="skipBtn" class="btn glass skip">SKIP</button>
+</div>
+
+<div id="rotate"><div class="phone"></div><p>Turn your phone sideways to play</p></div>
+<div id="loading"><div id="loadText">Loading 0%</div><div class="bar load"><i id="loadFill"></i></div></div>
+<script type="module" src="src/main.js"></script>
+</body>
+</html>

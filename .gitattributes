@@ -1,0 +1,8 @@
+# normalise text line endings; treat game assets as binary (no diffs, no line-ending changes)
+* text=auto
+*.sh text eol=lf
+*.glb binary
+*.png binary
+*.jpg binary
+*.mp3 binary
+*.webp binary
